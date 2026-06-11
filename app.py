@@ -236,7 +236,7 @@ try:
                 recon_val = str(row.get('再生液配製', ''))
                 if recon_val and "無" not in recon_val:
                     # 步驟 A: 把 N/S 改為 N/S食鹽水
-                    recon_val = recon_val.replace("N/S", "N/S食鹽用水")
+                    recon_val = recon_val.replace("N/S", "N/S食鹽水")
                     
                     # 步驟 B: 把水量 (數字 + ml/cc) 用正則表達式抓出來紅字放大
                     recon_val = re.sub(r'(\d+(?:\.\d+)?\s*(?:ml|mL|cc|CC))', 
@@ -244,7 +244,7 @@ try:
                                   recon_val)
                                   
                     # 步驟 C: 把三種特定溶劑紅字放大
-                    for sol in ["專用水", "N/S食鹽用水", "注射用水"]:
+                    for sol in ["專用水", "N/S食鹽水", "注射用水"]:
                         recon_val = recon_val.replace(sol, f"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>{sol}</span>")
                     
                     # 處理完畢後塞進 notes 清單
@@ -257,8 +257,8 @@ try:
                 if notes:
                     text = "<br><br>".join(notes).replace("不可冷藏", "【NO_FRIDGE】")
                     
-                    # 這裡只做全局的防呆紅字標籤 (與水量、溶劑無關)
-                    for k in ["冷藏", "避光", "不可使用過濾器", "限用NS", "限用D5W"]:
+                    # 這裡只做全局的防呆紅字標籤 (已移除"限用NS")
+                    for k in ["冷藏", "避光", "不可使用過濾器", "限用D5W"]:
                         text = text.replace(k, f"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>{k}</span>")
                     
                     text = text.replace("不可鞘內注射", "<span style='color:#ff4b4b; font-size:1.4em; font-weight:bold; background-color:#ffeb3b; padding:0 4px; border-radius:4px;'>絕對不可鞘內注射</span>")
