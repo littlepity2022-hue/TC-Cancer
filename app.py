@@ -56,57 +56,53 @@ try:
                 st.selectbox("1. 選擇癌症種類", ["(請先選擇正確途徑)"], disabled=True)
 
         # ==========================================
-        # 第二列：2. 處方方案 與 3. 藥物組合+線別
+        # 獨立橫列：2. 處方方案 & 3. 藥物組合+線別
         # ==========================================
-        row2_col1, row2_col2 = st.columns([3, 7]) # 3:7 比例，讓後面的藥物名有足夠空間顯示
-        
         if not df_route.empty and not df_cancer.empty:
             
-            with row2_col1:
-                # 抓出該癌症所有的「處方方案」並強制 A-Z 排序
-                regimen_list = sorted(df_cancer['處方方案 / 條件'].unique().tolist())
-                selected_regimen = st.selectbox("2. 選擇處方方案 (Regimen)", regimen_list)
+            # 抓出該癌症所有的「處方方案」並強制 A-Z 排序
+            regimen_list = sorted(df_cancer['處方方案 / 條件'].unique().tolist())
+            
+            # 讓處方方案自己獨佔一橫列 (滿版寬度)
+            selected_regimen = st.selectbox("2. 選擇處方方案 (Regimen)", regimen_list)
+            
+            # 過濾出該處方方案的資料
+            df_regimen = df_cancer[df_cancer['處方方案 / 條件'] == selected_regimen]
+            
+            # 抓出該處方方案對應的所有「治療線別」
+            lines = df_regimen['治療線別'].unique().tolist()
+            combo_options = []
+            combo_to_line_map = {}
+            
+            for line in lines:
+                # 抓出該線別下的所有藥物
+                drugs = df_regimen[df_regimen['治療線別'] == line]['藥品名'].tolist()
+                drugs_clean = []
+                for d in drugs:
+                    # 移除括號內的文字以保持清爽 (例如商品名)
+                    d_name = re.sub(r'\s*\(.*?\)', '', str(d)).strip()
+                    if d_name not in drugs_clean:
+                        drugs_clean.append(d_name)
+                drug_str = " + ".join(drugs_clean)
                 
-                # 過濾出該處方方案的資料
-                df_regimen = df_cancer[df_cancer['處方方案 / 條件'] == selected_regimen]
+                # 整理標籤與圖示
+                line_clean = line.replace("【純口服】", "").strip()
+                route_icon = "💊" if "【純口服】" in line or "口服" in selected_route else "💉"
                 
-            with row2_col2:
-                # 抓出該處方方案對應的所有「治療線別」
-                lines = df_regimen['治療線別'].unique().tolist()
-                combo_options = []
-                combo_to_line_map = {}
+                # 組合出：💉 藥A + 藥B | 治療線別
+                opt_str = f"{route_icon} {drug_str}   |   {line_clean}"
+                combo_options.append(opt_str)
+                combo_to_line_map[opt_str] = line
                 
-                for line in lines:
-                    # 抓出該線別下的所有藥物
-                    drugs = df_regimen[df_regimen['治療線別'] == line]['藥品名'].tolist()
-                    drugs_clean = []
-                    for d in drugs:
-                        # 移除括號內的文字以保持清爽 (例如商品名)
-                        d_name = re.sub(r'\s*\(.*?\)', '', str(d)).strip()
-                        if d_name not in drugs_clean:
-                            drugs_clean.append(d_name)
-                    drug_str = " + ".join(drugs_clean)
-                    
-                    # 整理標籤與圖示
-                    line_clean = line.replace("【純口服】", "").strip()
-                    route_icon = "💊" if "【純口服】" in line or "口服" in selected_route else "💉"
-                    
-                    # 組合出：💉 藥A + 藥B | 治療線別
-                    opt_str = f"{route_icon} {drug_str}   |   {line_clean}"
-                    combo_options.append(opt_str)
-                    combo_to_line_map[opt_str] = line
-                    
-                selected_combo = st.selectbox("3. 確認藥物組合與治療線別", combo_options)
-                selected_line = combo_to_line_map[selected_combo]
-                
-                # 最終過濾出要顯示的 DataFrame
-                final_df = df_regimen[df_regimen['治療線別'] == selected_line]
-                display_title = selected_combo
+            # 讓藥物組合與治療線別也自己獨佔下一橫列 (滿版寬度)
+            selected_combo = st.selectbox("3. 確認藥物組合與治療線別", combo_options)
+            selected_line = combo_to_line_map[selected_combo]
+            
+            # 最終過濾出要顯示的 DataFrame
+            final_df = df_regimen[df_regimen['治療線別'] == selected_line]
         else:
-            with row2_col1:
-                st.selectbox("2. 選擇處方方案 (Regimen)", ["-"], disabled=True)
-            with row2_col2:
-                st.selectbox("3. 確認藥物組合與治療線別", ["-"], disabled=True)
+            st.selectbox("2. 選擇處方方案 (Regimen)", ["-"], disabled=True)
+            st.selectbox("3. 確認藥物組合與治療線別", ["-"], disabled=True)
 
         st.divider()
 
