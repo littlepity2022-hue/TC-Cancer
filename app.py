@@ -48,7 +48,6 @@ try:
 
         with row1_col2:
             if not df_route.empty:
-                # 取得該途徑下的癌症清單
                 cancer_options = df_route['癌症種類'].unique()
                 cancer_type = st.selectbox("1. 選擇癌症種類 (Cancer Type)", cancer_options)
                 df_cancer = df_route[df_route['癌症種類'] == cancer_type]
@@ -59,46 +58,34 @@ try:
         # 獨立橫列：2. 處方方案 & 3. 藥物組合+線別
         # ==========================================
         if not df_route.empty and not df_cancer.empty:
-            
-            # 抓出該癌症所有的「處方方案」並強制 A-Z 排序
+            df_cancer = df_cancer.copy()
             regimen_list = sorted(df_cancer['處方方案 / 條件'].unique().tolist())
-            
-            # 讓處方方案自己獨佔一橫列 (滿版寬度)
             selected_regimen = st.selectbox("2. 選擇處方方案 (Regimen)", regimen_list)
             
-            # 過濾出該處方方案的資料
             df_regimen = df_cancer[df_cancer['處方方案 / 條件'] == selected_regimen]
-            
-            # 抓出該處方方案對應的所有「治療線別」
             lines = df_regimen['治療線別'].unique().tolist()
             combo_options = []
             combo_to_line_map = {}
             
             for line in lines:
-                # 抓出該線別下的所有藥物
                 drugs = df_regimen[df_regimen['治療線別'] == line]['藥品名'].tolist()
                 drugs_clean = []
                 for d in drugs:
-                    # 移除括號內的文字以保持清爽 (例如商品名)
                     d_name = re.sub(r'\s*\(.*?\)', '', str(d)).strip()
                     if d_name not in drugs_clean:
                         drugs_clean.append(d_name)
                 drug_str = " + ".join(drugs_clean)
                 
-                # 整理標籤與圖示
                 line_clean = line.replace("【純口服】", "").strip()
                 route_icon = "💊" if "【純口服】" in line or "口服" in selected_route else "💉"
                 
-                # 組合出：💉 藥A + 藥B | 治療線別
                 opt_str = f"{route_icon} {drug_str}   |   {line_clean}"
                 combo_options.append(opt_str)
                 combo_to_line_map[opt_str] = line
                 
-            # 讓藥物組合與治療線別也自己獨佔下一橫列 (滿版寬度)
             selected_combo = st.selectbox("3. 確認藥物組合與治療線別", combo_options)
             selected_line = combo_to_line_map[selected_combo]
             
-            # 最終過濾出要顯示的 DataFrame
             final_df = df_regimen[df_regimen['治療線別'] == selected_line]
         else:
             st.selectbox("2. 選擇處方方案 (Regimen)", ["-"], disabled=True)
@@ -108,10 +95,69 @@ try:
 
         # 檢查是否有最終篩選結果，才顯示下方內容
         if 'final_df' in locals() and not final_df.empty:
-            # 標題改為顯示藥物組合名稱
             st.subheader(f"📌 {selected_regimen} 方案細節")
-            display_columns = ['藥品名', '劑量 (Dose)', '輸注時間 (Rate)', '給藥日', '間隔時間/頻率', '週期']
-            st.dataframe(final_df[display_columns], hide_index=True, use_container_width=True)
+            
+            # ==========================================
+            # 📅 日期設定區 (放在表格正上方)
+            # ==========================================
+            st.markdown("##### 📅 施打日期設定 (將自動帶入下方表格)")
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                # 打開網頁預設帶入今天日期
+                target_date = st.date_input("🗓️ 本次預計施打日期 (預設今日)：", datetime.date.today())
+            with col_d2:
+                # 預設為三週前，方便微調
+                default_last_date = target_date - datetime.timedelta(days=21)
+                last_dose_date = st.date_input("⏮️ 上次實際施打日期：", default_last_date)
+            
+            # ==========================================
+            # 🚀 動態生成表格欄位 (把安全評估塞進 DataFrame)
+            # ==========================================
+            disp_df = final_df.copy()
+            safe_dates = []
+            assessments = []
+            
+            for _, row in disp_df.iterrows():
+                freq = str(row['間隔時間/頻率']).upper()
+                required_days = None
+                
+                # 自動判斷是 Q_W(週) 還是 Q_D(天) 還是 QW(每週)
+                match_w = re.search(r'Q(\d+)W', freq)
+                match_d = re.search(r'Q(\d+)D', freq)
+                
+                if match_w:
+                    required_days = int(match_w.group(1)) * 7
+                elif match_d:
+                    required_days = int(match_d.group(1))
+                elif 'QW' in freq and not match_w:
+                    required_days = 7
+                    
+                # 根據天數計算結果並加入 List
+                if required_days is not None:
+                    safe_date = last_dose_date + datetime.timedelta(days=required_days)
+                    safe_dates.append(safe_date.strftime("%Y-%m-%d"))
+                    
+                    if (target_date - last_dose_date).days >= required_days:
+                        assessments.append("✅ 安全")
+                    else:
+                        assessments.append("❌ 提早不宜")
+                elif "SINGLE DOSE" in freq or "1ST" in freq:
+                    safe_dates.append("-")
+                    assessments.append("ℹ️ 單一劑量")
+                elif "QD" in freq or "BID" in freq or "TID" in freq or "PO" in freq:
+                    safe_dates.append("每日")
+                    assessments.append("✅ 安全")
+                else:
+                    safe_dates.append("-")
+                    assessments.append("⚠️ 依醫囑")
+                    
+            # 將計算結果塞回表格中
+            disp_df['最快可施打日'] = safe_dates
+            disp_df['安全評估'] = assessments
+            
+            # 重新排列要顯示的欄位 (把新欄位緊跟在間隔時間後面)
+            display_columns = ['藥品名', '劑量 (Dose)', '輸注時間 (Rate)', '給藥日', '間隔時間/頻率', '最快可施打日', '安全評估', '週期']
+            st.dataframe(disp_df[display_columns], hide_index=True, use_container_width=True)
 
             st.divider()
 
@@ -142,7 +188,6 @@ try:
             global_bsa, global_bw, dose_adj_percent = 1.60, 60.0, 100
             
             if needs_bsa or needs_bw:
-                # 動態分配欄位數
                 col_count = sum([needs_bsa, needs_bw, True]) 
                 cols = st.columns(col_count)
                 col_idx = 0
@@ -154,10 +199,8 @@ try:
                     global_bw = cols[col_idx].number_input("⚖️ 病人體重 (kg):", min_value=0.0, value=60.0, step=1.0)
                     col_idx += 1
                 
-                # 增加劑量調整比例欄位 (打折用)
                 dose_adj_percent = cols[col_idx].number_input("📉 劑量調整比例 (%):", min_value=10, max_value=200, value=100, step=5, help="若需打8折請輸入80")
 
-            # 輔助計算函數，加入調整係數
             def calc_dose_str(val_str, multiplier, adj_factor=1.0):
                 try:
                     if '-' in val_str:
@@ -191,25 +234,6 @@ try:
                             st.info(f"💡 **【{d_name}】** 打折後總劑量： **{total_str} mg**  *(算法: {m.group(1)} mg/m² × {global_bsa} m² × {dose_adj_percent}%)*")
                 else:
                     st.markdown(f"💊 **【{d_name}】**: 固定劑量 ({row['劑量 (Dose)']})")
-
-            st.divider()
-
-            # ==========================================
-            # 📅 施打間隔安全核對器 
-            # ==========================================
-            st.markdown("### 📅 施打間隔安全核對器")
-            target_date = st.date_input("🗓️ 本次預計施打日期：", datetime.date.today())
-
-            for _, row in final_df.iterrows():
-                freq = str(row['間隔時間/頻率']).upper()
-                match = re.search(r'Q(\d+)W', freq)
-                if match:
-                    deadline = target_date - datetime.timedelta(days=int(match.group(1)) * 7)
-                    st.warning(f"⏳ **{row['藥品名']}** ({freq}): 上次施打應早於或等於 **{deadline}**")
-                elif "SINGLE DOSE" in freq:
-                    st.info(f"ℹ️ **{row['藥品名']}**: 單一劑量。")
-                else:
-                    st.info(f"ℹ️ **{row['藥品名']}**: 頻率為 {freq}。")
 
             st.divider()
 
