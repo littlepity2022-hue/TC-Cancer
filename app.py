@@ -232,9 +232,10 @@ try:
                 if row['注意事項 / 評估項目']: 
                     notes.append(f"📌 <b>【指引條件】</b>: {row['注意事項 / 評估項目']}")
                 
-                # 2. 再生液配製 (新功能)
-                if '再生液配製' in df.columns and row['再生液配製']:
-                    notes.append(f"🧪 <b>【再生液配製】</b>: {row['再生液配製']}")
+                # 2. 再生液配製 (新功能：排除含有「無」的項目，讓液體藥物乾淨不顯示)
+                recon_val = str(row.get('再生液配製', ''))
+                if recon_val and "無" not in recon_val:
+                    notes.append(f"🧪 <b>【再生液配製】</b>: {recon_val}")
                     
                 # 3. 點滴規範
                 if '調配與給藥注意事項' in df.columns and row['調配與給藥注意事項']:
@@ -243,8 +244,13 @@ try:
                 if notes:
                     text = "<br><br>".join(notes).replace("不可冷藏", "【NO_FRIDGE】")
                     
-                    # 紅字放大防呆標籤
-                    for k in ["冷藏", "避光", "不可使用過濾器", "限用NS", "限用D5W"]:
+                    # -- 重點修改區：使用 Regex 自動辨識 cc 或 ml 並將數字與單位紅字放大 --
+                    text = re.sub(r'(\d+(?:\.\d+)?\s*(?:ml|mL|cc|CC))', 
+                                  r"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>\1</span>", 
+                                  text)
+
+                    # -- 新增 注射用水、N/S 等關鍵字進入紅字放大防呆清單 --
+                    for k in ["冷藏", "避光", "不可使用過濾器", "限用NS", "限用D5W", "注射用水", "N/S"]:
                         text = text.replace(k, f"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>{k}</span>")
                     
                     text = text.replace("不可鞘內注射", "<span style='color:#ff4b4b; font-size:1.4em; font-weight:bold; background-color:#ffeb3b; padding:0 4px; border-radius:4px;'>絕對不可鞘內注射</span>")
