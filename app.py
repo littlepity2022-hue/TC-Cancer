@@ -163,7 +163,7 @@ try:
             st.divider()
 
             # ==========================================
-            # 🧮 處方總劑量自動試算 (支援 Calvert AUC 運算)
+            # 🧮 處方總劑量自動試算 (自動抓取目標 AUC)
             # ==========================================
             st.markdown("### 🧮 處方總劑量自動試算")
             needs_bsa = any(('mg/m2' in str(d).lower() or 'mg/m²' in str(d).lower()) for d in final_df['劑量 (Dose)'])
@@ -171,10 +171,21 @@ try:
             needs_auc = any('auc' in str(d).lower() for d in final_df['劑量 (Dose)'])
             
             global_bsa, global_bw, dose_adj_factor = 1.60, 60.0, 1.0
-            global_auc, global_egfr = 5.0, 60.0
+            global_egfr = 60.0
+            
+            # --- 重點修改：自動掃描並帶入該處方的 AUC 數值 ---
+            default_auc = 5.0  # 若真的找不到，保底給 5.0
+            if needs_auc:
+                for d_val in final_df['劑量 (Dose)']:
+                    d_str = str(d_val).lower()
+                    if 'auc' in d_str:
+                        # 尋找 "auc=3", "auc 2", "auc: 5" 裡面的數字
+                        m = re.search(r'auc\s*[=:-]?\s*(\d+(?:\.\d+)?)', d_str)
+                        if m:
+                            default_auc = float(m.group(1))
+                            break
             
             if needs_bsa or needs_bw or needs_auc:
-                # 動態分配欄位數 (如果有 AUC，會多出 2 個輸入框)
                 col_count = sum([needs_bsa, needs_bw, needs_auc*2, True]) 
                 cols = st.columns(col_count)
                 col_idx = 0
@@ -186,12 +197,13 @@ try:
                     global_bw = cols[col_idx].number_input("⚖️ 病人體重 (kg):", min_value=0.0, value=60.0, step=1.0)
                     col_idx += 1
                 if needs_auc:
-                    global_auc = cols[col_idx].number_input("🎯 目標 AUC:", min_value=0.0, value=5.0, step=0.5)
+                    # 在這裡自動帶入剛剛抓到的 default_auc！
+                    global_auc = cols[col_idx].number_input("🎯 目標 AUC:", min_value=0.0, value=default_auc, step=0.5)
                     col_idx += 1
                     global_egfr = cols[col_idx].number_input("🩸 eGFR (請填入 Clcr):", min_value=0.0, value=60.0, step=1.0)
                     col_idx += 1
                 
-                dose_adj_factor = cols[col_idx].number_input("📉 劑量調整比例 (如 0.8 為 8折):", min_value=0.1, max_value=2.0, value=1.0, step=0.05, format="%.2f")
+                dose_adj_factor = cols[col_idx].number_input("📉 劑量調整比例 (如 0.8):", min_value=0.1, max_value=2.0, value=1.0, step=0.05, format="%.2f")
 
             def calc_dose_str(val_str, multiplier, adj_factor=1.0):
                 try:
@@ -208,7 +220,6 @@ try:
                 d_name, d_str = row['藥品名'], str(row['劑量 (Dose)']).lower()
                 
                 if 'auc' in d_str:
-                    # Calvert 算法：總劑量(mg) = 目標AUC x (GFR + 25)
                     total_dose = global_auc * (global_egfr + 25) * dose_adj_factor
                     if dose_adj_factor == 1.0:
                         st.info(f"💡 **【{d_name}】** 總劑量： **{total_dose:.2f} mg**  *(Calvert公式: AUC {global_auc} × ({global_egfr:.0f} + 25))*")
@@ -237,7 +248,7 @@ try:
             st.divider()
 
             # ==========================================
-            # ⚠️ 注意事項 (液劑智慧隱藏 + 高亮紅字)
+            # ⚠️ 注意事項 (含獨立卡片與水量放大)
             # ==========================================
             st.markdown("### ⚠️ 評估項目與調配注意事項")
             for _, row in final_df.iterrows():
@@ -247,11 +258,22 @@ try:
                 if row['注意事項 / 評估項目']: 
                     notes.append(f"📌 <b>【指引條件】</b>: {row['注意事項 / 評估項目']}")
                 
-                # 2. 再生液配製 (如果包含「液劑」或「無須配製」，就自動隱藏)
-                if '再生液配製' in df.columns and row['再生液配製']:
-                    recon_text = str(row['再生液配製'])
-                    if "液劑" not in recon_text and "無須配製" not in recon_text:
-                        notes.append(f"🧪 <b>【再生液配製】</b>: {recon_text}")
+                # 2. 再生液配製 (獨立處理：自動改名與抓取水量放大)
+                recon_val = str(row.get('再生液配製', ''))
+                if recon_val and "無" not in recon_val and "液劑" not in recon_val:
+                    # 步驟 A: 把 N/S 改為 N/S食鹽水
+                    recon_val = recon_val.replace("N/S", "N/S食鹽水")
+                    
+                    # 步驟 B: 把水量 (數字 + ml/cc) 用正則表達式抓出來紅字放大
+                    recon_val = re.sub(r'(\d+(?:\.\d+)?\s*(?:ml|mL|cc|CC))', 
+                                  r"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>\1</span>", 
+                                  recon_val)
+                                  
+                    # 步驟 C: 把三種特定溶劑紅字放大
+                    for sol in ["專用水", "N/S食鹽水", "注射用水"]:
+                        recon_val = recon_val.replace(sol, f"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>{sol}</span>")
+                    
+                    notes.append(f"🧪 <b>【再生液配製】</b>: {recon_val}")
                     
                 # 3. 點滴規範
                 if '調配與給藥注意事項' in df.columns and row['調配與給藥注意事項']:
@@ -260,18 +282,37 @@ try:
                 if notes:
                     text = "<br><br>".join(notes).replace("不可冷藏", "【NO_FRIDGE】")
                     
-                    # 紅字放大防呆標籤
-                    for k in ["冷藏", "避光", "不可使用過濾器", "限用NS", "限用D5W"]:
+                    # 這裡只做全局的防呆紅字標籤 (沒有 NS)
+                    for k in ["冷藏", "避光", "不可使用過濾器", "限用D5W"]:
                         text = text.replace(k, f"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>{k}</span>")
                     
                     text = text.replace("不可鞘內注射", "<span style='color:#ff4b4b; font-size:1.4em; font-weight:bold; background-color:#ffeb3b; padding:0 4px; border-radius:4px;'>絕對不可鞘內注射</span>")
                     text = text.replace("【NO_FRIDGE】", "不可冷藏")
                     text = text.replace("\n", "<br>")
                     
+                    # --- 高對比獨立卡片設計 ---
                     html_card = f"""
-                    <div style="background-color: var(--secondary-background-color); padding: 15px; border-radius: 8px; border: 1px solid var(--primary-color); margin-bottom: 10px;">
-                        <div style="font-size: 1.1em; font-weight: bold; margin-bottom: 10px; color: var(--primary-color);">📍 藥品：{row['藥品名']}</div>
-                        <div style="line-height: 1.6; color: var(--text-color);">{text}</div>
+                    <div style="
+                        background-color: rgba(128, 128, 128, 0.1); 
+                        padding: 20px; 
+                        border-radius: 10px; 
+                        border: 1px solid rgba(128, 128, 128, 0.4); 
+                        border-left: 8px solid #ff4b4b; 
+                        margin-bottom: 25px; 
+                        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                    ">
+                        <div style="
+                            font-size: 1.3em; 
+                            font-weight: bold; 
+                            margin-bottom: 15px; 
+                            border-bottom: 2px solid rgba(128, 128, 128, 0.2); 
+                            padding-bottom: 10px;
+                        ">
+                            <span style="color: #ff4b4b;">💊 藥品：</span>{row['藥品名']}
+                        </div>
+                        <div style="line-height: 1.8; font-size: 1.05em; color: var(--text-color);">
+                            {text}
+                        </div>
                     </div>
                     """
                     st.markdown(html_card, unsafe_allow_html=True)
