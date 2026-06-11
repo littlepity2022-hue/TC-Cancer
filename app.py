@@ -97,25 +97,15 @@ try:
         if 'final_df' in locals() and not final_df.empty:
             st.subheader(f"📌 {selected_regimen} 方案細節")
             
-            # ==========================================
-            # 📅 日期設定區 (放在表格正上方)
-            # ==========================================
-            st.markdown("##### 📅 施打日期設定 (將自動帶入下方表格)")
-            col_d1, col_d2 = st.columns(2)
-            with col_d1:
-                # 打開網頁預設帶入今天日期
-                target_date = st.date_input("🗓️ 本次預計施打日期 (預設今日)：", datetime.date.today())
-            with col_d2:
-                # 預設為三週前，方便微調
-                default_last_date = target_date - datetime.timedelta(days=21)
-                last_dose_date = st.date_input("⏮️ 上次實際施打日期：", default_last_date)
+            # 取得打開網頁的「今天日期」
+            today_date = datetime.date.today()
+            st.caption(f"*(系統已自動帶入今日日期：**{today_date.strftime('%Y-%m-%d')}**，為您逆推算上次最晚施打日)*")
             
             # ==========================================
-            # 🚀 動態生成表格欄位 (把安全評估塞進 DataFrame)
+            # 🚀 動態生成表格欄位 (免輸入！全自動逆推算)
             # ==========================================
             disp_df = final_df.copy()
-            safe_dates = []
-            assessments = []
+            deadlines = []
             
             for _, row in disp_df.iterrows():
                 freq = str(row['間隔時間/頻率']).upper()
@@ -132,31 +122,22 @@ try:
                 elif 'QW' in freq and not match_w:
                     required_days = 7
                     
-                # 根據天數計算結果並加入 List
+                # 根據天數計算「上次最晚期限」
                 if required_days is not None:
-                    safe_date = last_dose_date + datetime.timedelta(days=required_days)
-                    safe_dates.append(safe_date.strftime("%Y-%m-%d"))
-                    
-                    if (target_date - last_dose_date).days >= required_days:
-                        assessments.append("✅ 安全")
-                    else:
-                        assessments.append("❌ 提早不宜")
+                    deadline = today_date - datetime.timedelta(days=required_days)
+                    deadlines.append(f"≤ {deadline.strftime('%Y-%m-%d')}")
                 elif "SINGLE DOSE" in freq or "1ST" in freq:
-                    safe_dates.append("-")
-                    assessments.append("ℹ️ 單一劑量")
-                elif "QD" in freq or "BID" in freq or "TID" in freq or "PO" in freq:
-                    safe_dates.append("每日")
-                    assessments.append("✅ 安全")
+                    deadlines.append("單一劑量 / 首次")
+                elif "QD" in freq or "BID" in freq or "TID" in freq or "PO" in freq or "CONTINUOUS" in freq:
+                    deadlines.append("每日口服")
                 else:
-                    safe_dates.append("-")
-                    assessments.append("⚠️ 依醫囑")
+                    deadlines.append("-")
                     
-            # 將計算結果塞回表格中
-            disp_df['最快可施打日'] = safe_dates
-            disp_df['安全評估'] = assessments
+            # 將計算結果塞回表格中，名稱改成最直白的提示
+            disp_df['若今日施打，上次應'] = deadlines
             
-            # 重新排列要顯示的欄位 (把新欄位緊跟在間隔時間後面)
-            display_columns = ['藥品名', '劑量 (Dose)', '輸注時間 (Rate)', '給藥日', '間隔時間/頻率', '最快可施打日', '安全評估', '週期']
+            # 重新排列要顯示的欄位
+            display_columns = ['藥品名', '劑量 (Dose)', '輸注時間 (Rate)', '給藥日', '間隔時間/頻率', '若今日施打，上次應', '週期']
             st.dataframe(disp_df[display_columns], hide_index=True, use_container_width=True)
 
             st.divider()
