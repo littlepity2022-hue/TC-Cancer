@@ -265,11 +265,29 @@ try:
                     text = text.replace("【NO_FRIDGE】", "不可冷藏")
                     text = text.replace("\n", "<br>")
                     
-                    # 卡片設計
+                    # --- 重點修改區：建立超明顯的高對比專屬卡片框 ---
                     html_card = f"""
-                    <div style="background-color: var(--secondary-background-color); padding: 15px; border-radius: 8px; border: 1px solid var(--primary-color); margin-bottom: 10px;">
-                        <div style="font-size: 1.1em; font-weight: bold; margin-bottom: 10px; color: var(--primary-color);">📍 藥品：{row['藥品名']}</div>
-                        <div style="line-height: 1.6; color: var(--text-color);">{text}</div>
+                    <div style="
+                        background-color: rgba(128, 128, 128, 0.1); 
+                        padding: 20px; 
+                        border-radius: 10px; 
+                        border: 1px solid rgba(128, 128, 128, 0.4); 
+                        border-left: 8px solid #ff4b4b; 
+                        margin-bottom: 25px; 
+                        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                    ">
+                        <div style="
+                            font-size: 1.3em; 
+                            font-weight: bold; 
+                            margin-bottom: 15px; 
+                            border-bottom: 2px solid rgba(128, 128, 128, 0.2); 
+                            padding-bottom: 10px;
+                        ">
+                            <span style="color: #ff4b4b;">💊 藥品：</span>{row['藥品名']}
+                        </div>
+                        <div style="line-height: 1.8; font-size: 1.05em; color: var(--text-color);">
+                            {text}
+                        </div>
                     </div>
                     """
                     st.markdown(html_card, unsafe_allow_html=True)
