@@ -163,7 +163,7 @@ try:
             st.divider()
 
             # ==========================================
-            # 🧮 處方總劑量自動試算 (自動抓取目標 AUC)
+            # 🧮 處方總劑量自動試算 (自動抓取目標 AUC + 紅字提醒)
             # ==========================================
             st.markdown("### 🧮 處方總劑量自動試算")
             needs_bsa = any(('mg/m2' in str(d).lower() or 'mg/m²' in str(d).lower()) for d in final_df['劑量 (Dose)'])
@@ -173,13 +173,12 @@ try:
             global_bsa, global_bw, dose_adj_factor = 1.60, 60.0, 1.0
             global_egfr = 60.0
             
-            # --- 重點修改：自動掃描並帶入該處方的 AUC 數值 ---
-            default_auc = 5.0  # 若真的找不到，保底給 5.0
+            # 自動掃描並帶入該處方的 AUC 數值
+            default_auc = 5.0
             if needs_auc:
                 for d_val in final_df['劑量 (Dose)']:
                     d_str = str(d_val).lower()
                     if 'auc' in d_str:
-                        # 尋找 "auc=3", "auc 2", "auc: 5" 裡面的數字
                         m = re.search(r'auc\s*[=:-]?\s*(\d+(?:\.\d+)?)', d_str)
                         if m:
                             default_auc = float(m.group(1))
@@ -197,8 +196,8 @@ try:
                     global_bw = cols[col_idx].number_input("⚖️ 病人體重 (kg):", min_value=0.0, value=60.0, step=1.0)
                     col_idx += 1
                 if needs_auc:
-                    # 在這裡自動帶入剛剛抓到的 default_auc！
-                    global_auc = cols[col_idx].number_input("🎯 目標 AUC:", min_value=0.0, value=default_auc, step=0.5)
+                    # --- 重點修改：加上了紅色字體的提示 ---
+                    global_auc = cols[col_idx].number_input("🎯 目標 AUC (**:red[依照實際方案修改]**):", min_value=0.0, value=default_auc, step=0.5)
                     col_idx += 1
                     global_egfr = cols[col_idx].number_input("🩸 eGFR (請填入 Clcr):", min_value=0.0, value=60.0, step=1.0)
                     col_idx += 1
