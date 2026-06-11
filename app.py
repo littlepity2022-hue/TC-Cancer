@@ -56,59 +56,61 @@ try:
                 st.selectbox("1. 選擇癌症種類", ["(請先選擇正確途徑)"], disabled=True)
 
         # ==========================================
-        # 第二列：2. 處方方案(3) 與 3. 藥物組合(7)
+        # 獨立橫列：2. 處方方案 (滿版) & 3. 藥物組合 (滿版)
         # ==========================================
-        row2_col1, row2_col2 = st.columns([3, 7])
-        
         if not df_route.empty and not df_cancer.empty:
-            with row2_col1:
-                # 抓出該癌症所有的「處方方案」並強制 A-Z 排序
-                regimen_list = sorted(df_cancer['處方方案 / 條件'].unique().tolist(), key=lambda x: str(x).upper())
-                selected_regimen = st.selectbox("2. 選擇處方方案 (Regimen)", regimen_list)
+            
+            df_cancer = df_cancer.copy()
+            df_cancer['Line_Regimen'] = df_cancer['治療線別'] + " | " + df_cancer['處方方案 / 條件']
+            
+            # 抓出該癌症所有的「處方方案」並強制 A-Z 排序
+            regimen_list = sorted(df_cancer['處方方案 / 條件'].unique().tolist(), key=lambda x: str(x).upper())
+            
+            # 🌟 讓處方方案自己獨佔一橫列 (滿版寬度)
+            selected_regimen = st.selectbox("2. 選擇處方方案 (Regimen)", regimen_list)
+            
+            # 過濾出該處方方案的資料
+            df_regimen = df_cancer[df_cancer['處方方案 / 條件'] == selected_regimen]
+            
+            # 抓出該處方方案對應的所有「治療線別」
+            lines = df_regimen['治療線別'].unique().tolist()
+            combo_options = []
+            combo_to_line_map = {}
+            
+            for line in lines:
+                # 抓出該線別下的所有藥物
+                drugs = df_regimen[df_regimen['治療線別'] == line]['藥品名'].tolist()
+                drugs_clean = []
+                for d in drugs:
+                    # 移除括號內的文字以保持清爽 (例如商品名)
+                    d_name = re.sub(r'\s*\(.*?\)', '', str(d)).strip()
+                    if d_name not in drugs_clean:
+                        drugs_clean.append(d_name)
+                drug_str = " + ".join(drugs_clean)
                 
-                # 過濾出該處方方案的資料
-                df_regimen = df_cancer[df_cancer['處方方案 / 條件'] == selected_regimen]
+                # 整理標籤與圖示
+                line_clean = line.replace("【純口服】", "").strip()
+                route_icon = "💊" if "【純口服】" in line or "口服" in selected_route else "💉"
                 
-            with row2_col2:
-                # 抓出該處方方案對應的所有「治療線別」
-                lines = df_regimen['治療線別'].unique().tolist()
-                combo_options = []
-                combo_to_line_map = {}
+                # 組合出：💉 藥A + 藥B | 治療線別
+                opt_str = f"{route_icon} {drug_str}   |   {line_clean}"
+                combo_options.append(opt_str)
+                combo_to_line_map[opt_str] = line
                 
-                for line in lines:
-                    # 抓出該線別下的所有藥物
-                    drugs = df_regimen[df_regimen['治療線別'] == line]['藥品名'].tolist()
-                    drugs_clean = []
-                    for d in drugs:
-                        # 移除括號內的文字以保持清爽 (例如商品名)
-                        d_name = re.sub(r'\s*\(.*?\)', '', str(d)).strip()
-                        if d_name not in drugs_clean:
-                            drugs_clean.append(d_name)
-                    drug_str = " + ".join(drugs_clean)
-                    
-                    # 整理標籤與圖示
-                    line_clean = line.replace("【純口服】", "").strip()
-                    route_icon = "💊" if "【純口服】" in line or "口服" in selected_route else "💉"
-                    
-                    # 組合出：💉 藥A + 藥B | 治療線別
-                    opt_str = f"{route_icon} {drug_str}   |   {line_clean}"
-                    combo_options.append(opt_str)
-                    combo_to_line_map[opt_str] = line
-                
-                # 將選項依照「藥物名稱字母 A-Z」進行排序
-                combo_options = sorted(combo_options, key=lambda x: x.split("   |   ")[0].replace("💊 ", "").replace("💉 ", "").strip().upper())
-                
-                selected_combo = st.selectbox("3. 確認藥物組合與治療線別", combo_options)
-                selected_line = combo_to_line_map[selected_combo]
-                
-                # 最終過濾出要顯示的 DataFrame
-                final_df = df_regimen[df_regimen['治療線別'] == selected_line]
-                display_drugs = selected_combo.split("   |   ")[0]
+            # 將選項依照「藥物名稱字母 A-Z」進行排序
+            combo_options = sorted(combo_options, key=lambda x: x.split("   |   ")[0].replace("💊 ", "").replace("💉 ", "").strip().upper())
+            
+            # 🌟 讓藥物組合與治療線別也自己獨佔下一橫列 (滿版寬度)
+            selected_combo = st.selectbox("3. 確認藥物組合與治療線別", combo_options)
+            selected_line = combo_to_line_map[selected_combo]
+            
+            # 最終過濾出要顯示的 DataFrame
+            final_df = df_regimen[df_regimen['治療線別'] == selected_line]
+            display_drugs = selected_combo.split("   |   ")[0]
+            
         else:
-            with row2_col1:
-                st.selectbox("2. 選擇處方方案 (Regimen)", ["-"], disabled=True)
-            with row2_col2:
-                st.selectbox("3. 確認藥物組合與治療線別", ["-"], disabled=True)
+            st.selectbox("2. 選擇處方方案 (Regimen)", ["-"], disabled=True)
+            st.selectbox("3. 確認藥物組合與治療線別", ["-"], disabled=True)
 
         st.divider()
 
@@ -188,13 +190,13 @@ try:
             st.divider()
 
             # ==========================================
-            # 🧮 處方總劑量自動試算 (支援打折/劑量調整)
+            # 🧮 處方總劑量自動試算 (小數點打折版)
             # ==========================================
             st.markdown("### 🧮 處方總劑量自動試算")
             needs_bsa = any(('mg/m2' in str(d).lower() or 'mg/m²' in str(d).lower()) for d in final_df['劑量 (Dose)'])
             needs_bw = any('mg/kg' in str(d).lower() for d in final_df['劑量 (Dose)'])
             
-            global_bsa, global_bw, dose_adj_percent = 1.60, 60.0, 100
+            global_bsa, global_bw, dose_adj_factor = 1.60, 60.0, 1.0
             
             if needs_bsa or needs_bw:
                 col_count = sum([needs_bsa, needs_bw, True]) 
@@ -208,7 +210,8 @@ try:
                     global_bw = cols[col_idx].number_input("⚖️ 病人體重 (kg):", min_value=0.0, value=60.0, step=1.0)
                     col_idx += 1
                 
-                dose_adj_percent = cols[col_idx].number_input("📉 劑量調整比例 (%):", min_value=10, max_value=200, value=100, step=5, help="若需打8折請輸入80")
+                # 🌟 劑量調整比例改為臨床常用的小數點格式 (如 0.8)
+                dose_adj_factor = cols[col_idx].number_input("📉 劑量調整比例 (如 0.8 為 8折):", min_value=0.1, max_value=2.0, value=1.0, step=0.05, format="%.2f")
 
             def calc_dose_str(val_str, multiplier, adj_factor=1.0):
                 try:
@@ -223,24 +226,23 @@ try:
 
             for _, row in final_df.iterrows():
                 d_name, d_str = row['藥品名'], str(row['劑量 (Dose)']).lower()
-                adj_factor = dose_adj_percent / 100.0
                 
                 if 'mg/kg' in d_str:
                     m = re.search(r'([\d\.\-\~]+)\s*mg/kg', d_str)
                     if m:
-                        total_str = calc_dose_str(m.group(1), global_bw, adj_factor)
-                        if dose_adj_percent == 100:
+                        total_str = calc_dose_str(m.group(1), global_bw, dose_adj_factor)
+                        if dose_adj_factor == 1.0:
                             st.info(f"💡 **【{d_name}】** 總劑量： **{total_str} mg**  *(算法: {m.group(1)} mg/kg × {global_bw} kg)*")
                         else:
-                            st.info(f"💡 **【{d_name}】** 打折後總劑量： **{total_str} mg**  *(算法: {m.group(1)} mg/kg × {global_bw} kg × {dose_adj_percent}%)*")
+                            st.info(f"💡 **【{d_name}】** 調整後總劑量： **{total_str} mg**  *(算法: {m.group(1)} mg/kg × {global_bw} kg × {dose_adj_factor})*")
                 elif 'mg/m2' in d_str or 'mg/m²' in d_str:
                     m = re.search(r'([\d\.\-\~]+)\s*mg/m[2²]', d_str)
                     if m:
-                        total_str = calc_dose_str(m.group(1), global_bsa, adj_factor)
-                        if dose_adj_percent == 100:
+                        total_str = calc_dose_str(m.group(1), global_bsa, dose_adj_factor)
+                        if dose_adj_factor == 1.0:
                             st.info(f"💡 **【{d_name}】** 總劑量： **{total_str} mg**  *(算法: {m.group(1)} mg/m² × {global_bsa} m²)*")
                         else:
-                            st.info(f"💡 **【{d_name}】** 打折後總劑量： **{total_str} mg**  *(算法: {m.group(1)} mg/m² × {global_bsa} m² × {dose_adj_percent}%)*")
+                            st.info(f"💡 **【{d_name}】** 調整後總劑量： **{total_str} mg**  *(算法: {m.group(1)} mg/m² × {global_bsa} m² × {dose_adj_factor})*")
                 else:
                     st.markdown(f"💊 **【{d_name}】**: 固定劑量 ({row['劑量 (Dose)']})")
 
