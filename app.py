@@ -56,50 +56,65 @@ try:
                 st.selectbox("1. 選擇癌症種類", ["(請先選擇正確途徑)"], disabled=True)
 
         # ==========================================
-        # 獨立橫列：2. 處方方案 & 3. 藥物組合+線別
+        # 第二列：2. 處方方案(3) 與 3. 藥物組合(7)
         # ==========================================
+        row2_col1, row2_col2 = st.columns([3, 7])
+        
         if not df_route.empty and not df_cancer.empty:
-            
-            df_cancer = df_cancer.copy()
-            df_cancer['Line_Regimen'] = df_cancer['治療線別'] + " | " + df_cancer['處方方案 / 條件']
-            
-            def get_drug_string(opt):
-                line, reg = opt.split(" | ", 1)
-                drugs = df_cancer[(df_cancer['治療線別'] == line) & (df_cancer['處方方案 / 條件'] == reg)]['藥品名'].tolist()
-                drugs_clean = []
-                for d in drugs:
-                    d_name = re.sub(r'\s*\(.*?\)', '', str(d)).strip()
-                    if d_name not in drugs_clean:
-                        drugs_clean.append(d_name)
-                return " + ".join(drugs_clean)
-
-            unique_options = df_cancer['Line_Regimen'].unique()
-            regimen_options = sorted(unique_options, key=lambda x: get_drug_string(x).upper())
-            
-            def format_option(opt):
-                line, reg = opt.split(" | ", 1)
-                drug_str = get_drug_string(opt)
+            with row2_col1:
+                # 抓出該癌症所有的「處方方案」並強制 A-Z 排序
+                regimen_list = sorted(df_cancer['處方方案 / 條件'].unique().tolist(), key=lambda x: str(x).upper())
+                selected_regimen = st.selectbox("2. 選擇處方方案 (Regimen)", regimen_list)
                 
-                line_clean = line.replace("【純口服】", "").strip()
-                reg_clean = reg.replace("【純口服】", "").strip()
-                route_icon = "💊" if "【純口服】" in line or "口服" in selected_route else "💉"
+                # 過濾出該處方方案的資料
+                df_regimen = df_cancer[df_cancer['處方方案 / 條件'] == selected_regimen]
                 
-                return f"{route_icon} {drug_str}   |   {line_clean} ({reg_clean})"
-
-            selected_line_regimen = st.selectbox("2. 選擇用藥組合", regimen_options, format_func=format_option)
-            
-            sel_line, sel_reg = selected_line_regimen.split(" | ", 1)
-            final_df = df_cancer[(df_cancer['治療線別'] == sel_line) & (df_cancer['處方方案 / 條件'] == sel_reg)]
-            
-            display_drugs = get_drug_string(selected_line_regimen)
+            with row2_col2:
+                # 抓出該處方方案對應的所有「治療線別」
+                lines = df_regimen['治療線別'].unique().tolist()
+                combo_options = []
+                combo_to_line_map = {}
+                
+                for line in lines:
+                    # 抓出該線別下的所有藥物
+                    drugs = df_regimen[df_regimen['治療線別'] == line]['藥品名'].tolist()
+                    drugs_clean = []
+                    for d in drugs:
+                        # 移除括號內的文字以保持清爽 (例如商品名)
+                        d_name = re.sub(r'\s*\(.*?\)', '', str(d)).strip()
+                        if d_name not in drugs_clean:
+                            drugs_clean.append(d_name)
+                    drug_str = " + ".join(drugs_clean)
+                    
+                    # 整理標籤與圖示
+                    line_clean = line.replace("【純口服】", "").strip()
+                    route_icon = "💊" if "【純口服】" in line or "口服" in selected_route else "💉"
+                    
+                    # 組合出：💉 藥A + 藥B | 治療線別
+                    opt_str = f"{route_icon} {drug_str}   |   {line_clean}"
+                    combo_options.append(opt_str)
+                    combo_to_line_map[opt_str] = line
+                
+                # 將選項依照「藥物名稱字母 A-Z」進行排序
+                combo_options = sorted(combo_options, key=lambda x: x.split("   |   ")[0].replace("💊 ", "").replace("💉 ", "").strip().upper())
+                
+                selected_combo = st.selectbox("3. 確認藥物組合與治療線別", combo_options)
+                selected_line = combo_to_line_map[selected_combo]
+                
+                # 最終過濾出要顯示的 DataFrame
+                final_df = df_regimen[df_regimen['治療線別'] == selected_line]
+                display_drugs = selected_combo.split("   |   ")[0]
         else:
-            st.selectbox("2. 選擇用藥組合", ["-"], disabled=True)
+            with row2_col1:
+                st.selectbox("2. 選擇處方方案 (Regimen)", ["-"], disabled=True)
+            with row2_col2:
+                st.selectbox("3. 確認藥物組合與治療線別", ["-"], disabled=True)
 
         st.divider()
 
         # 檢查是否有最終篩選結果，才顯示下方內容
         if 'final_df' in locals() and not final_df.empty:
-            st.subheader(f"📌 {display_drugs}")
+            st.subheader(f"📌 {selected_regimen} 方案細節")
             
             # ==========================================
             # 📅 日期設定與表格生成區
@@ -254,7 +269,7 @@ try:
                     text = text.replace("【NO_FRIDGE】", "不可冷藏")
                     text = text.replace("\n", "<br>")
                     
-                    # 完美相容深色/淺色模式的 HTML Card (使用 var(--secondary-background-color) 與 var(--text-color))
+                    # 完美相容深色/淺色模式的 HTML Card
                     html_card = f"""
                     <div style="background-color: var(--secondary-background-color); padding: 15px; border-radius: 8px; border: 1px solid var(--primary-color); margin-bottom: 10px;">
                         <div style="font-size: 1.1em; font-weight: bold; margin-bottom: 10px; color: var(--primary-color);">📍 藥品：{row['藥品名']}</div>
