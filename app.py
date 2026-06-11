@@ -48,6 +48,7 @@ try:
 
         with row1_col2:
             if not df_route.empty:
+                # 取得該途徑下的癌症清單
                 cancer_options = df_route['癌症種類'].unique()
                 cancer_type = st.selectbox("1. 選擇癌症種類 (Cancer Type)", cancer_options)
                 df_cancer = df_route[df_route['癌症種類'] == cancer_type]
@@ -58,52 +59,54 @@ try:
         # 獨立橫列：2. 處方方案 & 3. 藥物組合+線別
         # ==========================================
         if not df_route.empty and not df_cancer.empty:
+            
             df_cancer = df_cancer.copy()
-            regimen_list = sorted(df_cancer['處方方案 / 條件'].unique().tolist())
-            selected_regimen = st.selectbox("2. 選擇處方方案 (Regimen)", regimen_list)
+            df_cancer['Line_Regimen'] = df_cancer['治療線別'] + " | " + df_cancer['處方方案 / 條件']
             
-            df_regimen = df_cancer[df_cancer['處方方案 / 條件'] == selected_regimen]
-            lines = df_regimen['治療線別'].unique().tolist()
-            combo_options = []
-            combo_to_line_map = {}
-            
-            for line in lines:
-                drugs = df_regimen[df_regimen['治療線別'] == line]['藥品名'].tolist()
+            def get_drug_string(opt):
+                line, reg = opt.split(" | ", 1)
+                drugs = df_cancer[(df_cancer['治療線別'] == line) & (df_cancer['處方方案 / 條件'] == reg)]['藥品名'].tolist()
                 drugs_clean = []
                 for d in drugs:
                     d_name = re.sub(r'\s*\(.*?\)', '', str(d)).strip()
                     if d_name not in drugs_clean:
                         drugs_clean.append(d_name)
-                drug_str = " + ".join(drugs_clean)
+                return " + ".join(drugs_clean)
+
+            unique_options = df_cancer['Line_Regimen'].unique()
+            regimen_options = sorted(unique_options, key=lambda x: get_drug_string(x).upper())
+            
+            def format_option(opt):
+                line, reg = opt.split(" | ", 1)
+                drug_str = get_drug_string(opt)
                 
                 line_clean = line.replace("【純口服】", "").strip()
+                reg_clean = reg.replace("【純口服】", "").strip()
                 route_icon = "💊" if "【純口服】" in line or "口服" in selected_route else "💉"
                 
-                opt_str = f"{route_icon} {drug_str}   |   {line_clean}"
-                combo_options.append(opt_str)
-                combo_to_line_map[opt_str] = line
-                
-            selected_combo = st.selectbox("3. 確認藥物組合與治療線別", combo_options)
-            selected_line = combo_to_line_map[selected_combo]
+                return f"{route_icon} {drug_str}   |   {line_clean} ({reg_clean})"
+
+            selected_line_regimen = st.selectbox("2. 選擇用藥組合", regimen_options, format_func=format_option)
             
-            final_df = df_regimen[df_regimen['治療線別'] == selected_line]
+            sel_line, sel_reg = selected_line_regimen.split(" | ", 1)
+            final_df = df_cancer[(df_cancer['治療線別'] == sel_line) & (df_cancer['處方方案 / 條件'] == sel_reg)]
+            
+            display_drugs = get_drug_string(selected_line_regimen)
         else:
-            st.selectbox("2. 選擇處方方案 (Regimen)", ["-"], disabled=True)
-            st.selectbox("3. 確認藥物組合與治療線別", ["-"], disabled=True)
+            st.selectbox("2. 選擇用藥組合", ["-"], disabled=True)
 
         st.divider()
 
         # 檢查是否有最終篩選結果，才顯示下方內容
         if 'final_df' in locals() and not final_df.empty:
-            st.subheader(f"📌 {selected_regimen} 方案細節")
+            st.subheader(f"📌 {display_drugs}")
             
-            # 取得打開網頁的「今天日期」
+            # ==========================================
+            # 📅 日期設定與表格生成區
+            # ==========================================
             today_date = datetime.date.today()
             st.caption(f"*(系統已自動帶入今日日期：**{today_date.strftime('%Y-%m-%d')}**，為您逆推算上次最晚施打日)*")
             
-            # ==========================================
-            # 🚀 動態生成表格欄位 (免輸入！全自動逆推算)
-            # ==========================================
             disp_df = final_df.copy()
             deadlines = []
             
@@ -111,7 +114,6 @@ try:
                 freq = str(row['間隔時間/頻率']).upper()
                 required_days = None
                 
-                # 自動判斷是 Q_W(週) 還是 Q_D(天) 還是 QW(每週)
                 match_w = re.search(r'Q(\d+)W', freq)
                 match_d = re.search(r'Q(\d+)D', freq)
                 
@@ -122,10 +124,10 @@ try:
                 elif 'QW' in freq and not match_w:
                     required_days = 7
                     
-                # 根據天數計算「上次最晚期限」
+                # 萃取月與日，格式化為：≤ MM月DD日
                 if required_days is not None:
                     deadline = today_date - datetime.timedelta(days=required_days)
-                    deadlines.append(f"≤ {deadline.strftime('%Y-%m-%d')}")
+                    deadlines.append(f"≤ {deadline.strftime('%m月%d日')}")
                 elif "SINGLE DOSE" in freq or "1ST" in freq:
                     deadlines.append("單一劑量 / 首次")
                 elif "QD" in freq or "BID" in freq or "TID" in freq or "PO" in freq or "CONTINUOUS" in freq:
@@ -133,12 +135,23 @@ try:
                 else:
                     deadlines.append("-")
                     
-            # 將計算結果塞回表格中，名稱改成最直白的提示
             disp_df['若今日施打，上次應'] = deadlines
             
-            # 重新排列要顯示的欄位
             display_columns = ['藥品名', '劑量 (Dose)', '輸注時間 (Rate)', '給藥日', '間隔時間/頻率', '若今日施打，上次應', '週期']
-            st.dataframe(disp_df[display_columns], hide_index=True, use_container_width=True)
+            
+            # 使用 Pandas Styler 讓「≤ MM月DD日」變成紅色放大粗體
+            def highlight_date(val):
+                if isinstance(val, str) and '≤' in val:
+                    return 'color: #ff4b4b; font-weight: bold; font-size: 1.25em;'
+                return ''
+            
+            # 支援新舊版 Pandas 的寫法
+            if hasattr(disp_df.style, "map"):
+                styled_df = disp_df[display_columns].style.map(highlight_date, subset=['若今日施打，上次應'])
+            else:
+                styled_df = disp_df[display_columns].style.applymap(highlight_date, subset=['若今日施打，上次應'])
+                
+            st.dataframe(styled_df, hide_index=True, use_container_width=True)
 
             st.divider()
 
@@ -219,7 +232,7 @@ try:
             st.divider()
 
             # ==========================================
-            # ⚠️ 注意事項 (高亮紅字)
+            # ⚠️ 注意事項 (深色模式相容 + 高亮紅字)
             # ==========================================
             st.markdown("### ⚠️ 評估項目與調配注意事項")
             for _, row in final_df.iterrows():
@@ -230,13 +243,25 @@ try:
                 
                 if notes:
                     text = "<br><br>".join(notes).replace("不可冷藏", "【NO_FRIDGE】")
-                    for k in ["冷藏", "避光", "不可使用過濾器", "限用NS", "限用D5W"]:
-                        text = text.replace(k, f"<span style='color:red; font-size:1.3em; font-weight:bold;'>{k}</span>")
-                    text = text.replace("不可鞘內注射", "<span style='color:red; font-size:1.4em; font-weight:bold; background:yellow;'>絕對不可鞘內注射</span>")
-                    text = text.replace("【NO_FRIDGE】", "不可冷藏")
                     
-                    st.markdown(f"""<div style="background:#eef7ff; padding:15px; border-radius:8px; border:1px solid #bce0fd; margin-bottom:10px;">
-                        <div style="font-weight:bold; color:#004085;">📍 藥品：{row['藥品名']}</div>{text}</div>""", unsafe_allow_html=True)
+                    # 紅字放大防呆標籤 (包含避光)
+                    for k in ["冷藏", "避光", "不可使用過濾器", "限用NS", "限用D5W"]:
+                        text = text.replace(k, f"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>{k}</span>")
+                    
+                    # 致命警告黃底紅字
+                    text = text.replace("不可鞘內注射", "<span style='color:#ff4b4b; font-size:1.4em; font-weight:bold; background-color:#ffeb3b; padding:0 4px; border-radius:4px;'>絕對不可鞘內注射</span>")
+                    
+                    text = text.replace("【NO_FRIDGE】", "不可冷藏")
+                    text = text.replace("\n", "<br>")
+                    
+                    # 完美相容深色/淺色模式的 HTML Card (使用 var(--secondary-background-color) 與 var(--text-color))
+                    html_card = f"""
+                    <div style="background-color: var(--secondary-background-color); padding: 15px; border-radius: 8px; border: 1px solid var(--primary-color); margin-bottom: 10px;">
+                        <div style="font-size: 1.1em; font-weight: bold; margin-bottom: 10px; color: var(--primary-color);">📍 藥品：{row['藥品名']}</div>
+                        <div style="line-height: 1.6; color: var(--text-color);">{text}</div>
+                    </div>
+                    """
+                    st.markdown(html_card, unsafe_allow_html=True)
 
     with tab2:
         st.markdown("### 快速核對藥物")
