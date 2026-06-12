@@ -65,6 +65,92 @@ def get_drug_icon_html(drug_name, route, recon_note, guide_note, prep_note):
         return f'{vial_svg}{ampoule_tag}<span style="margin-right:8px;"></span>'
 
 # ==========================================
+# 🤢 NCCN 止吐藥物智慧分析模組
+# ==========================================
+def get_antiemetic_recommendation_html(drugs_list):
+    combined_drugs = " ".join([str(d).upper() for d in drugs_list])
+    
+    is_high = False
+    is_mod = False
+    
+    # 1. 檢查 AC Regimen (Anthracycline + Cyclophosphamide) = 高度致吐
+    has_anthra = any(a in combined_drugs for a in ["DOXORUBICIN", "EPIRUBICIN", "IDARUBICIN", "DAUNORUBICIN"])
+    has_cyclo = "CYCLOPHOSPHAMIDE" in combined_drugs
+    if has_anthra and has_cyclo:
+        is_high = True
+
+    # 2. 檢查其他高度致吐藥物
+    high_keywords = ["CISPLATIN", "DACARBAZINE", "STREPTOZOCIN", "MECHLORETHAMINE", "CARMUSTINE"]
+    if any(h in combined_drugs for h in high_keywords):
+        is_high = True
+
+    # 3. 檢查中度致吐藥物
+    mod_keywords = ["CARBOPLATIN", "OXALIPLATIN", "IRINOTECAN", "CYCLOPHOSPHAMIDE", "DOXORUBICIN", "EPIRUBICIN", "IFOSFAMIDE", "CYTARABINE", "MELPHALAN", "ARSENIC", "DACTINOMYCIN", "MITOXANTRONE", "IDARUBICIN", "DAUNORUBICIN"]
+    if not is_high and any(m in combined_drugs for m in mod_keywords):
+        is_mod = True
+
+    if is_high:
+        return """
+        <div style="padding: 15px 20px; border-radius: 8px; border-left: 8px solid #dc3545; background-color: rgba(220, 53, 69, 0.1); margin-bottom: 20px;">
+            <h4 style="color: #dc3545; margin-top: 0; margin-bottom: 12px;">🚨 高致吐風險 (High Emetic Risk >90%) - 建議預防用藥</h4>
+            <div style="display: flex; flex-direction: column; gap: 10px; color: var(--text-color);">
+                <div>
+                    <span style="font-weight: bold; background-color: #dc3545; color: white; padding: 2px 8px; border-radius: 4px;">第 1 日 (化療注射前)</span>
+                    <ul style="margin-top: 5px; margin-bottom: 0;">
+                        <li><b>5-HT3 antagonist:</b> Ondansetron (Zofran®) 16-24 mg PO <b>或</b> 8-16 mg IV <br><i>(或 Palonosetron (Aloxi®) 0.25 mg IV / Tropisetron (Navoban®) 5 mg IV)</i></li>
+                        <li><b>NK-1 antagonist:</b> Aprepitant 125 mg PO <b>或</b> Fosaprepitant 150 mg IV</li>
+                        <li><b>Steroid:</b> Dexamethasone 12 mg IV</li>
+                    </ul>
+                </div>
+                <div style="border-top: 1px dashed rgba(128,128,128,0.3); padding-top: 10px;">
+                    <span style="font-weight: bold; background-color: #6c757d; color: white; padding: 2px 8px; border-radius: 4px;">第 2, 3, 4 日</span>
+                    <ul style="margin-top: 5px; margin-bottom: 0;">
+                        <li><b>5-HT3 antagonist:</b> <span style="color:#888;">不需再給予此類藥品</span></li>
+                        <li><b>NK-1 antagonist:</b> Aprepitant 80 mg PO 第 2 及 3 日 <i>(若 Day 1 使用 Fosaprepitant 則不需再給予)</i></li>
+                        <li><b>Steroid:</b> Dexamethasone 8 mg IV 第 2 及 3 日</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        """
+    elif is_mod:
+        return """
+        <div style="padding: 15px 20px; border-radius: 8px; border-left: 8px solid #fd7e14; background-color: rgba(253, 126, 20, 0.1); margin-bottom: 20px;">
+            <h4 style="color: #fd7e14; margin-top: 0; margin-bottom: 12px;">⚠️ 中致吐風險 (Moderate Emetic Risk 30%-90%) - 建議預防用藥</h4>
+            <div style="display: flex; flex-direction: column; gap: 10px; color: var(--text-color);">
+                <div>
+                    <span style="font-weight: bold; background-color: #fd7e14; color: white; padding: 2px 8px; border-radius: 4px;">第 1 日 (化療注射前)</span>
+                    <ul style="margin-top: 5px; margin-bottom: 0;">
+                        <li><b>5-HT3 antagonist:</b> Ondansetron (Zofran®) 16-24 mg PO <b>或</b> 8-16 mg IV <br><i>(或 Palonosetron (Aloxi®) 0.25 mg IV / Tropisetron (Navoban®) 5 mg IV <b>或</b> 5 mg PO)</i></li>
+                        <li><b>Steroid:</b> Dexamethasone 12 mg IV</li>
+                        <li><b style="color:#ff4b4b;">NK-1 antagonist (病人自費):</b> Aprepitant 125 mg PO <b>或</b> Fosaprepitant 150 mg IV</li>
+                    </ul>
+                </div>
+                <div style="border-top: 1px dashed rgba(128,128,128,0.3); padding-top: 10px;">
+                    <span style="font-weight: bold; background-color: #6c757d; color: white; padding: 2px 8px; border-radius: 4px;">第 2, 3, 4 日</span>
+                    <ul style="margin-top: 5px; margin-bottom: 0;">
+                        <li><b>5-HT3 antagonist (單獨使用):</b> Ondansetron (Zofran®) 8-16 mg IV <b>或</b> 16 mg/day PO <br><i>(或 Tropisetron (Navoban®) 5 mg/day PO)</i></li>
+                        <li><b>或 Steroid (單獨使用):</b> Dexamethasone 12 mg IV</li>
+                        <li><b style="color:#ff4b4b;">NK-1 antagonist (病人自費):</b> Aprepitant 80 mg PO 第 2 及 3 日 <i>(若 Day 1 使用 Fosaprepitant 則不需再給予)</i></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        """
+    else:
+        return """
+        <div style="padding: 15px 20px; border-radius: 8px; border-left: 8px solid #28a745; background-color: rgba(40, 167, 69, 0.1); margin-bottom: 20px;">
+            <h4 style="color: #28a745; margin-top: 0; margin-bottom: 12px;">✅ 低/微量致吐風險 (Low Emetic Risk) - 建議預防用藥</h4>
+            <ul style="color: var(--text-color); margin-bottom: 0; font-size: 1.05em;">
+                <li>Dexamethasone 12 mg IV QD</li>
+                <li><b>或</b> Metoclopramide 10-40 mg IV Q6H PRN</li>
+                <li><b>或</b> Prochlorperazine 10 mg IV Q6H PRN (max 40 mg/day)</li>
+            </ul>
+        </div>
+        """
+
+
+# ==========================================
 # 🧩 共用模組：渲染處方細節 (包含表格、計算、注意事項)
 # ==========================================
 def render_regimen_details(final_df, display_title, df_full, prefix_key):
@@ -131,7 +217,17 @@ def render_regimen_details(final_df, display_title, df_full, prefix_key):
     needs_auc = any('auc' in str(d).lower() for d in final_df['劑量 (Dose)'])
     
     global_bsa, global_bw, dose_adj_factor = 1.60, 60.0, 1.0
-    global_auc, global_egfr = 5.0, 60.0
+    global_egfr = 60.0
+    
+    default_auc = 5.0
+    if needs_auc:
+        for d_val in final_df['劑量 (Dose)']:
+            d_str = str(d_val).lower()
+            if 'auc' in d_str:
+                m = re.search(r'auc\s*[=:-]?\s*(\d+(?:\.\d+)?)', d_str)
+                if m:
+                    default_auc = float(m.group(1))
+                    break
     
     if needs_bsa or needs_bw or needs_auc:
         col_count = sum([needs_bsa, needs_bw, needs_auc*2, True]) 
@@ -145,7 +241,7 @@ def render_regimen_details(final_df, display_title, df_full, prefix_key):
             global_bw = cols[col_idx].number_input("⚖️ 病人體重 (kg):", min_value=0.0, value=60.0, step=1.0, key=f"bw_{prefix_key}")
             col_idx += 1
         if needs_auc:
-            global_auc = cols[col_idx].number_input("🎯 目標 AUC:", min_value=0.0, value=5.0, step=0.5, key=f"auc_{prefix_key}")
+            global_auc = cols[col_idx].number_input("🎯 目標 AUC (**:red[依照實際方案修改]**):", min_value=0.0, value=default_auc, step=0.5, key=f"auc_{prefix_key}")
             col_idx += 1
             global_egfr = cols[col_idx].number_input("🩸 eGFR (請填入 Clcr):", min_value=0.0, value=60.0, step=1.0, key=f"egfr_{prefix_key}")
             col_idx += 1
@@ -185,6 +281,11 @@ def render_regimen_details(final_df, display_title, df_full, prefix_key):
             st.markdown(f"💊 **【{d_name}】**: 固定劑量 ({row['劑量 (Dose)']})")
     st.divider()
 
+    # --- 新增：NCCN 止吐藥物建議 ---
+    st.markdown("### 🤢 止吐預防建議 (依據 NCCN 指引)")
+    st.markdown(get_antiemetic_recommendation_html(final_df['藥品名'].tolist()), unsafe_allow_html=True)
+    st.divider()
+
     # --- 注意事項 ---
     st.markdown("### ⚠️ 評估項目與調配注意事項")
     for _, row in final_df.iterrows():
@@ -193,24 +294,48 @@ def render_regimen_details(final_df, display_title, df_full, prefix_key):
         if '再生液配製' in df_full.columns and row['再生液配製']:
             recon_text = str(row['再生液配製'])
             if "液劑" not in recon_text and "無須配製" not in recon_text and "口服" not in recon_text and recon_text.strip() != "無":
+                recon_text = recon_text.replace("N/S", "N/S食鹽水")
+                recon_text = re.sub(r'(\d+(?:\.\d+)?\s*(?:ml|mL|cc|CC))', 
+                                r"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>\1</span>", 
+                                recon_text)
+                for sol in ["專用水", "N/S食鹽水", "注射用水"]:
+                    recon_text = recon_text.replace(sol, f"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>{sol}</span>")
                 notes.append(f"🧪 <b>【再生液配製】</b>: {recon_text}")
+                
         if '調配與給藥注意事項' in df_full.columns and row['調配與給藥注意事項']:
             notes.append(f"🏥 <b>【調配規範】</b>:<br>{row['調配與給藥注意事項']}")
         
         if notes:
             text = "<br><br>".join(notes).replace("不可冷藏", "【NO_FRIDGE】")
-            for k in ["冷藏", "避光", "不可使用過濾器", "限用NS", "限用D5W"]:
+            for k in ["冷藏", "避光", "不可使用過濾器", "限用D5W"]:
                 text = text.replace(k, f"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>{k}</span>")
             text = text.replace("不可鞘內注射", "<span style='color:#ff4b4b; font-size:1.4em; font-weight:bold; background-color:#ffeb3b; padding:0 4px; border-radius:4px;'>絕對不可鞘內注射</span>")
             text = text.replace("【NO_FRIDGE】", "不可冷藏").replace("\n", "<br>")
             
             drug_icon = get_drug_icon_html(row['藥品名'], row.get('藥物途徑', ''), row.get('再生液配製', ''), row.get('注意事項 / 評估項目', ''), row.get('調配與給藥注意事項', ''))
             html_card = f"""
-            <div style="background-color: var(--secondary-background-color); padding: 15px; border-radius: 8px; border: 1px solid var(--primary-color); margin-bottom: 10px;">
-                <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 12px; color: var(--primary-color); display: flex; align-items: center;">
-                    {drug_icon} 藥品：{row['藥品名']}
+            <div style="
+                background-color: rgba(128, 128, 128, 0.1); 
+                padding: 20px; 
+                border-radius: 10px; 
+                border: 1px solid rgba(128, 128, 128, 0.4); 
+                border-left: 8px solid #ff4b4b; 
+                margin-bottom: 25px; 
+                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            ">
+                <div style="
+                    font-size: 1.3em; 
+                    font-weight: bold; 
+                    margin-bottom: 15px; 
+                    border-bottom: 2px solid rgba(128, 128, 128, 0.2); 
+                    padding-bottom: 10px;
+                    display: flex; align-items: center;
+                ">
+                    {drug_icon} <span style="margin-left:5px;">藥品：{row['藥品名']}</span>
                 </div>
-                <div style="line-height: 1.6; color: var(--text-color);">{text}</div>
+                <div style="line-height: 1.8; font-size: 1.05em; color: var(--text-color);">
+                    {text}
+                </div>
             </div>
             """
             st.markdown(html_card, unsafe_allow_html=True)
@@ -220,7 +345,6 @@ try:
     df = load_data()
     st.title("🏥 癌症抗癌藥物治療指引查詢系統")
 
-    # 🌟 重大更新：【依已知用藥逆向查詢】移到第一個分頁，打開預設就是它！
     tab1, tab2, tab3 = st.tabs(["💊 依已知用藥逆向查詢", "📂 依病症分類查詢", "🔍 藥物名稱快速核對"])
 
     # ==========================================
