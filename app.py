@@ -22,17 +22,73 @@ st.markdown("""
 def load_data():
     return pd.read_excel("cancer_guidelines.xlsx").fillna("")
 
+# ==========================================
+# 🎨 動態產生藥品專屬 SVG 圖示與標籤 (高擬真藥瓶版)
+# ==========================================
+def get_drug_icon_html(drug_name, route, recon_note, guide_note, prep_note):
+    recon_str = str(recon_note).upper()
+    
+    # 組合所有相關文字來精準判斷是否為口服藥物
+    combined_text = f"{route} {recon_note} {guide_note} {prep_note}"
+    is_oral = False
+    
+    if "口服" in combined_text:
+        is_oral = True
+    # 使用正規表達式找獨立的 PO，避免誤判 (例如 Lipo-Dox 裡面的 po)
+    elif re.search(r'\bPO\b', combined_text, re.IGNORECASE):
+        is_oral = True
+        
+    # 1. 口服藥物 -> 顯示膠囊
+    if is_oral:
+        return '<span style="font-size:1.8em; line-height:1; vertical-align:middle; margin-right:8px;">💊</span>'
+    
+    # 寫實版玻璃藥瓶 SVG
+    vial_svg = '''
+    <svg width="22" height="28" viewBox="0 0 24 30" style="vertical-align: middle; margin-right:4px;">
+        <!-- 藍色瓶蓋 -->
+        <rect x="5" y="2" width="14" height="5" rx="1.5" fill="#007BFF"/>
+        <!-- 鋁底/橡皮塞區 -->
+        <rect x="6" y="7" width="12" height="3" fill="#CED4DA"/>
+        <!-- 玻璃瓶身 -->
+        <path d="M4 13 C4 10 7 10 7 10 L17 10 C17 10 20 10 20 13 L20 27 C20 29 18 30 16 30 L8 30 C6 30 4 29 4 27 Z" fill="#E9ECEF" stroke="#ADB5BD" stroke-width="1.5"/>
+        <!-- 藥瓶標籤 (黃白相間設計) -->
+        <rect x="4.5" y="15" width="15" height="10" fill="#FFFFFF"/>
+        <rect x="4.5" y="15" width="15" height="3" fill="#FFC107"/>
+        <line x1="7" y1="20" x2="17" y2="20" stroke="#CED4DA" stroke-width="1"/>
+        <line x1="7" y1="22" x2="14" y2="22" stroke="#CED4DA" stroke-width="1"/>
+    </svg>
+    '''
+    
+    # 2. 液劑 / 無須配製 / 無 -> 顯示「單純藥瓶」(不加標籤)
+    if "液劑" in recon_str or "無須配製" in recon_str or recon_str.strip() == "無":
+        return f'{vial_svg}<span style="margin-right:8px;"></span>'
+    
+    # 3. 粉針需要配製 -> 顯示「藥瓶」+「有色水滴標籤」
+    else:
+        ampoule_tag = ""
+        # 畫一顆白色小水滴
+        drop_svg = '<svg width="10" height="14" viewBox="0 0 10 14" style="margin-right:4px; fill:#fff; vertical-align:middle;"><path d="M5,0 C5,0 2,4 2,7 C2,9 3.5,11 5,11 C6.5,11 8,9 8,7 C8,4 5,0 5,0 Z"/></svg>'
+        
+        # 根據所需溶劑給予不同顏色的標籤
+        if "注射用水" in recon_str or "WATER" in recon_str:
+            ampoule_tag = f'<span style="display:inline-flex; align-items:center; background:#007BFF; color:#fff; font-size:0.75em; padding:3px 8px; border-radius:12px; margin-left:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">{drop_svg}注射用水</span>'
+        elif "N/S" in recon_str or "食鹽水" in recon_str or "NS" in recon_str:
+            ampoule_tag = f'<span style="display:inline-flex; align-items:center; background:#28A745; color:#fff; font-size:0.75em; padding:3px 8px; border-radius:12px; margin-left:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">{drop_svg}生理食鹽水</span>'
+        elif "D5W" in recon_str:
+            ampoule_tag = f'<span style="display:inline-flex; align-items:center; background:#FD7E14; color:#fff; font-size:0.75em; padding:3px 8px; border-radius:12px; margin-left:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">{drop_svg}D5W</span>'
+        else:
+            # 移除灰色的「需溶劑」，直接回傳藥瓶
+            ampoule_tag = ""
+
+        return f'{vial_svg}{ampoule_tag}<span style="margin-right:8px;"></span>'
+
 try:
     df = load_data()
-    
     st.title("🏥 癌症抗癌藥物治療指引查詢系統")
 
     tab1, tab2 = st.tabs(["📂 依病症分類查詢", "🔍 藥物名稱快速核對"])
 
     with tab1:
-        # ==========================================
-        # 第一列：0.途徑 與 1.癌症
-        # ==========================================
         row1_col1, row1_col2 = st.columns([1.5, 8.5])
         
         with row1_col1:
@@ -52,9 +108,6 @@ try:
             else:
                 st.selectbox("1. 選擇癌症種類", ["(請先選擇正確途徑)"], disabled=True)
 
-        # ==========================================
-        # 獨立橫列：2. 處方方案 & 3. 藥物組合+線別
-        # ==========================================
         if not df_route.empty and not df_cancer.empty:
             df_cancer = df_cancer.copy()
             df_cancer['Line_Regimen'] = df_cancer['治療線別'] + " | " + df_cancer['處方方案 / 條件']
@@ -78,8 +131,8 @@ try:
                 
                 line_clean = line.replace("【純口服】", "").strip()
                 route_icon = "💊" if "【純口服】" in line or "口服" in selected_route else "💉"
-                
                 opt_str = f"{route_icon} {drug_str}   |   {line_clean}"
+                
                 combo_options.append(opt_str)
                 combo_to_line_map[opt_str] = line
                 
@@ -120,7 +173,7 @@ try:
                     
                 if required_days is not None:
                     deadline = today_date - datetime.timedelta(days=required_days)
-                    deadlines.append(f"≤ {deadline.strftime('%m月%d日')}")
+                    deadlines.append(f"🚨 ≤ {deadline.strftime('%m月%d日')}")
                 elif "SINGLE DOSE" in freq or "1ST" in freq:
                     deadlines.append("單一劑量 / 首次")
                 elif "QD" in freq or "BID" in freq or "TID" in freq or "PO" in freq or "CONTINUOUS" in freq:
@@ -133,7 +186,7 @@ try:
             
             def highlight_date(val):
                 if isinstance(val, str) and '≤' in val:
-                    return 'color: #ff4b4b; font-weight: bold; font-size: 1.25em;'
+                    return 'color: #ff0000; font-weight: 900; font-size: 16px;'
                 return ''
             
             if hasattr(disp_df.style, "map"):
@@ -163,7 +216,7 @@ try:
             st.divider()
 
             # ==========================================
-            # 🧮 處方總劑量自動試算 (自動抓取目標 AUC + 紅字提醒)
+            # 🧮 處方總劑量自動試算 (支援 Calvert AUC 運算)
             # ==========================================
             st.markdown("### 🧮 處方總劑量自動試算")
             needs_bsa = any(('mg/m2' in str(d).lower() or 'mg/m²' in str(d).lower()) for d in final_df['劑量 (Dose)'])
@@ -171,18 +224,7 @@ try:
             needs_auc = any('auc' in str(d).lower() for d in final_df['劑量 (Dose)'])
             
             global_bsa, global_bw, dose_adj_factor = 1.60, 60.0, 1.0
-            global_egfr = 60.0
-            
-            # 自動掃描並帶入該處方的 AUC 數值
-            default_auc = 5.0
-            if needs_auc:
-                for d_val in final_df['劑量 (Dose)']:
-                    d_str = str(d_val).lower()
-                    if 'auc' in d_str:
-                        m = re.search(r'auc\s*[=:-]?\s*(\d+(?:\.\d+)?)', d_str)
-                        if m:
-                            default_auc = float(m.group(1))
-                            break
+            global_auc, global_egfr = 5.0, 60.0
             
             if needs_bsa or needs_bw or needs_auc:
                 col_count = sum([needs_bsa, needs_bw, needs_auc*2, True]) 
@@ -196,13 +238,12 @@ try:
                     global_bw = cols[col_idx].number_input("⚖️ 病人體重 (kg):", min_value=0.0, value=60.0, step=1.0)
                     col_idx += 1
                 if needs_auc:
-                    # --- 重點修改：加上了紅色字體的提示 ---
-                    global_auc = cols[col_idx].number_input("🎯 目標 AUC (**:red[依照實際方案修改]**):", min_value=0.0, value=default_auc, step=0.5)
+                    global_auc = cols[col_idx].number_input("🎯 目標 AUC:", min_value=0.0, value=5.0, step=0.5)
                     col_idx += 1
                     global_egfr = cols[col_idx].number_input("🩸 eGFR (請填入 Clcr):", min_value=0.0, value=60.0, step=1.0)
                     col_idx += 1
                 
-                dose_adj_factor = cols[col_idx].number_input("📉 劑量調整比例 (如 0.8):", min_value=0.1, max_value=2.0, value=1.0, step=0.05, format="%.2f")
+                dose_adj_factor = cols[col_idx].number_input("📉 劑量調整比例 (如 0.8 為 8折):", min_value=0.1, max_value=2.0, value=1.0, step=0.05, format="%.2f")
 
             def calc_dose_str(val_str, multiplier, adj_factor=1.0):
                 try:
@@ -247,71 +288,49 @@ try:
             st.divider()
 
             # ==========================================
-            # ⚠️ 注意事項 (含獨立卡片與水量放大)
+            # ⚠️ 注意事項 (深色模式相容 + 高亮紅字)
             # ==========================================
             st.markdown("### ⚠️ 評估項目與調配注意事項")
             for _, row in final_df.iterrows():
                 notes = []
                 
-                # 1. 條件指引
                 if row['注意事項 / 評估項目']: 
                     notes.append(f"📌 <b>【指引條件】</b>: {row['注意事項 / 評估項目']}")
                 
-                # 2. 再生液配製 (獨立處理：自動改名與抓取水量放大)
-                recon_val = str(row.get('再生液配製', ''))
-                if recon_val and "無" not in recon_val and "液劑" not in recon_val:
-                    # 步驟 A: 把 N/S 改為 N/S食鹽水
-                    recon_val = recon_val.replace("N/S", "N/S食鹽水")
+                # 🧪 智慧隱藏「液劑」與「無」的再生液配製
+                if '再生液配製' in df.columns and row['再生液配製']:
+                    recon_text = str(row['再生液配製'])
+                    if "液劑" not in recon_text and "無須配製" not in recon_text and "口服" not in recon_text and recon_text.strip() != "無":
+                        notes.append(f"🧪 <b>【再生液配製】</b>: {recon_text}")
                     
-                    # 步驟 B: 把水量 (數字 + ml/cc) 用正則表達式抓出來紅字放大
-                    recon_val = re.sub(r'(\d+(?:\.\d+)?\s*(?:ml|mL|cc|CC))', 
-                                  r"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>\1</span>", 
-                                  recon_val)
-                                  
-                    # 步驟 C: 把三種特定溶劑紅字放大
-                    for sol in ["專用水", "N/S食鹽水", "注射用水"]:
-                        recon_val = recon_val.replace(sol, f"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>{sol}</span>")
-                    
-                    notes.append(f"🧪 <b>【再生液配製】</b>: {recon_val}")
-                    
-                # 3. 點滴規範
                 if '調配與給藥注意事項' in df.columns and row['調配與給藥注意事項']:
                     notes.append(f"🏥 <b>【調配規範】</b>:<br>{row['調配與給藥注意事項']}")
                 
                 if notes:
                     text = "<br><br>".join(notes).replace("不可冷藏", "【NO_FRIDGE】")
                     
-                    # 這裡只做全局的防呆紅字標籤 (沒有 NS)
-                    for k in ["冷藏", "避光", "不可使用過濾器", "限用D5W"]:
+                    for k in ["冷藏", "避光", "不可使用過濾器", "限用NS", "限用D5W"]:
                         text = text.replace(k, f"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>{k}</span>")
                     
                     text = text.replace("不可鞘內注射", "<span style='color:#ff4b4b; font-size:1.4em; font-weight:bold; background-color:#ffeb3b; padding:0 4px; border-radius:4px;'>絕對不可鞘內注射</span>")
                     text = text.replace("【NO_FRIDGE】", "不可冷藏")
                     text = text.replace("\n", "<br>")
                     
-                    # --- 高對比獨立卡片設計 ---
+                    # 取得動態 SVG 藥瓶與水滴標籤，同時帶入所有的備註讓系統全方位掃描是否為口服藥物
+                    drug_icon = get_drug_icon_html(
+                        row['藥品名'], 
+                        row.get('藥物途徑', ''), 
+                        row.get('再生液配製', ''),
+                        row.get('注意事項 / 評估項目', ''),
+                        row.get('調配與給藥注意事項', '')
+                    )
+                    
                     html_card = f"""
-                    <div style="
-                        background-color: rgba(128, 128, 128, 0.1); 
-                        padding: 20px; 
-                        border-radius: 10px; 
-                        border: 1px solid rgba(128, 128, 128, 0.4); 
-                        border-left: 8px solid #ff4b4b; 
-                        margin-bottom: 25px; 
-                        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-                    ">
-                        <div style="
-                            font-size: 1.3em; 
-                            font-weight: bold; 
-                            margin-bottom: 15px; 
-                            border-bottom: 2px solid rgba(128, 128, 128, 0.2); 
-                            padding-bottom: 10px;
-                        ">
-                            <span style="color: #ff4b4b;">💊 藥品：</span>{row['藥品名']}
+                    <div style="background-color: var(--secondary-background-color); padding: 15px; border-radius: 8px; border: 1px solid var(--primary-color); margin-bottom: 10px;">
+                        <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 12px; color: var(--primary-color); display: flex; align-items: center;">
+                            {drug_icon} 藥品：{row['藥品名']}
                         </div>
-                        <div style="line-height: 1.8; font-size: 1.05em; color: var(--text-color);">
-                            {text}
-                        </div>
+                        <div style="line-height: 1.6; color: var(--text-color);">{text}</div>
                     </div>
                     """
                     st.markdown(html_card, unsafe_allow_html=True)
