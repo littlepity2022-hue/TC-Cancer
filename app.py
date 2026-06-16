@@ -6,7 +6,6 @@ import re
 # 設定網頁版面為寬版
 st.set_page_config(page_title="癌症用藥指引查詢系統", layout="wide")
 
-# --- 自定義 CSS 讓下拉選單文字更易讀 ---
 st.markdown("""
     <style>
     div[data-baseweb="select"] > div {
@@ -22,9 +21,6 @@ st.markdown("""
 def load_data():
     return pd.read_excel("cancer_guidelines.xlsx").fillna("")
 
-# ==========================================
-# 🎨 動態產生藥品專屬 SVG 圖示與標籤
-# ==========================================
 def get_drug_icon_html(drug_name, route, recon_note, guide_note, prep_note):
     recon_str = str(recon_note).upper()
     combined_text = f"{route} {recon_note} {guide_note} {prep_note}"
@@ -64,95 +60,6 @@ def get_drug_icon_html(drug_name, route, recon_note, guide_note, prep_note):
         
         return f'{vial_svg}{ampoule_tag}<span style="margin-right:8px;"></span>'
 
-# ==========================================
-# 🤢 NCCN 止吐藥物智慧分析模組
-# ==========================================
-def get_antiemetic_recommendation_html(drugs_list):
-    combined_drugs = " ".join([str(d).upper() for d in drugs_list])
-    
-    is_high = False
-    is_mod = False
-    
-    # 1. 檢查 AC Regimen (Anthracycline + Cyclophosphamide) = 高度致吐
-    has_anthra = any(a in combined_drugs for a in ["DOXORUBICIN", "EPIRUBICIN", "IDARUBICIN", "DAUNORUBICIN"])
-    has_cyclo = "CYCLOPHOSPHAMIDE" in combined_drugs
-    if has_anthra and has_cyclo:
-        is_high = True
-
-    # 2. 檢查其他高度致吐藥物
-    high_keywords = ["CISPLATIN", "DACARBAZINE", "STREPTOZOCIN", "MECHLORETHAMINE", "CARMUSTINE"]
-    if any(h in combined_drugs for h in high_keywords):
-        is_high = True
-
-    # 3. 檢查中度致吐藥物
-    mod_keywords = ["CARBOPLATIN", "OXALIPLATIN", "IRINOTECAN", "CYCLOPHOSPHAMIDE", "DOXORUBICIN", "EPIRUBICIN", "IFOSFAMIDE", "CYTARABINE", "MELPHALAN", "ARSENIC", "DACTINOMYCIN", "MITOXANTRONE", "IDARUBICIN", "DAUNORUBICIN"]
-    if not is_high and any(m in combined_drugs for m in mod_keywords):
-        is_mod = True
-
-    if is_high:
-        return """
-        <div style="padding: 15px 20px; border-radius: 8px; border-left: 8px solid #dc3545; background-color: rgba(220, 53, 69, 0.1); margin-bottom: 20px;">
-            <h4 style="color: #dc3545; margin-top: 0; margin-bottom: 12px;">🚨 高致吐風險 (High Emetic Risk >90%) - 建議預防用藥</h4>
-            <div style="display: flex; flex-direction: column; gap: 10px; color: var(--text-color);">
-                <div>
-                    <span style="font-weight: bold; background-color: #dc3545; color: white; padding: 2px 8px; border-radius: 4px;">第 1 日 (化療注射前)</span>
-                    <ul style="margin-top: 5px; margin-bottom: 0;">
-                        <li><b>5-HT3 antagonist:</b> Ondansetron (Zofran®) 16-24 mg PO <b>或</b> 8-16 mg IV <br><i>(或 Palonosetron (Aloxi®) 0.25 mg IV / Tropisetron (Navoban®) 5 mg IV)</i></li>
-                        <li><b>NK-1 antagonist:</b> Aprepitant 125 mg PO <b>或</b> Fosaprepitant 150 mg IV</li>
-                        <li><b>Steroid:</b> Dexamethasone 12 mg IV</li>
-                    </ul>
-                </div>
-                <div style="border-top: 1px dashed rgba(128,128,128,0.3); padding-top: 10px;">
-                    <span style="font-weight: bold; background-color: #6c757d; color: white; padding: 2px 8px; border-radius: 4px;">第 2, 3, 4 日</span>
-                    <ul style="margin-top: 5px; margin-bottom: 0;">
-                        <li><b>5-HT3 antagonist:</b> <span style="color:#888;">不需再給予此類藥品</span></li>
-                        <li><b>NK-1 antagonist:</b> Aprepitant 80 mg PO 第 2 及 3 日 <i>(若 Day 1 使用 Fosaprepitant 則不需再給予)</i></li>
-                        <li><b>Steroid:</b> Dexamethasone 8 mg IV 第 2 及 3 日</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-        """
-    elif is_mod:
-        return """
-        <div style="padding: 15px 20px; border-radius: 8px; border-left: 8px solid #fd7e14; background-color: rgba(253, 126, 20, 0.1); margin-bottom: 20px;">
-            <h4 style="color: #fd7e14; margin-top: 0; margin-bottom: 12px;">⚠️ 中致吐風險 (Moderate Emetic Risk 30%-90%) - 建議預防用藥</h4>
-            <div style="display: flex; flex-direction: column; gap: 10px; color: var(--text-color);">
-                <div>
-                    <span style="font-weight: bold; background-color: #fd7e14; color: white; padding: 2px 8px; border-radius: 4px;">第 1 日 (化療注射前)</span>
-                    <ul style="margin-top: 5px; margin-bottom: 0;">
-                        <li><b>5-HT3 antagonist:</b> Ondansetron (Zofran®) 16-24 mg PO <b>或</b> 8-16 mg IV <br><i>(或 Palonosetron (Aloxi®) 0.25 mg IV / Tropisetron (Navoban®) 5 mg IV <b>或</b> 5 mg PO)</i></li>
-                        <li><b>Steroid:</b> Dexamethasone 12 mg IV</li>
-                        <li><b style="color:#ff4b4b;">NK-1 antagonist (病人自費):</b> Aprepitant 125 mg PO <b>或</b> Fosaprepitant 150 mg IV</li>
-                    </ul>
-                </div>
-                <div style="border-top: 1px dashed rgba(128,128,128,0.3); padding-top: 10px;">
-                    <span style="font-weight: bold; background-color: #6c757d; color: white; padding: 2px 8px; border-radius: 4px;">第 2, 3, 4 日</span>
-                    <ul style="margin-top: 5px; margin-bottom: 0;">
-                        <li><b>5-HT3 antagonist (單獨使用):</b> Ondansetron (Zofran®) 8-16 mg IV <b>或</b> 16 mg/day PO <br><i>(或 Tropisetron (Navoban®) 5 mg/day PO)</i></li>
-                        <li><b>或 Steroid (單獨使用):</b> Dexamethasone 12 mg IV</li>
-                        <li><b style="color:#ff4b4b;">NK-1 antagonist (病人自費):</b> Aprepitant 80 mg PO 第 2 及 3 日 <i>(若 Day 1 使用 Fosaprepitant 則不需再給予)</i></li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-        """
-    else:
-        return """
-        <div style="padding: 15px 20px; border-radius: 8px; border-left: 8px solid #28a745; background-color: rgba(40, 167, 69, 0.1); margin-bottom: 20px;">
-            <h4 style="color: #28a745; margin-top: 0; margin-bottom: 12px;">✅ 低/微量致吐風險 (Low Emetic Risk) - 建議預防用藥</h4>
-            <ul style="color: var(--text-color); margin-bottom: 0; font-size: 1.05em;">
-                <li>Dexamethasone 12 mg IV QD</li>
-                <li><b>或</b> Metoclopramide 10-40 mg IV Q6H PRN</li>
-                <li><b>或</b> Prochlorperazine 10 mg IV Q6H PRN (max 40 mg/day)</li>
-            </ul>
-        </div>
-        """
-
-
-# ==========================================
-# 🧩 共用模組：渲染處方細節 (包含表格、計算、注意事項)
-# ==========================================
 def render_regimen_details(final_df, display_title, df_full, prefix_key):
     st.subheader(f"📌 {display_title} 方案細節")
     
@@ -198,6 +105,57 @@ def render_regimen_details(final_df, display_title, df_full, prefix_key):
     st.dataframe(styled_df, hide_index=True, use_container_width=True)
     st.divider()
 
+    # --- CINV 評估 ---
+    st.markdown("### 🤢 化療致吐風險 (CINV) 自動評估")
+    drug_names_upper = [str(d).upper() for d in final_df['藥品名'].tolist()]
+    combined_drugs = " ".join(drug_names_upper)
+    
+    is_hec = False
+    hec_triggers = []
+    is_mec = False
+    mec_triggers = []
+
+    if "CISPLATIN" in combined_drugs:
+        is_hec = True
+        hec_triggers.append("Cisplatin")
+    if "DACARBAZINE" in combined_drugs:
+        is_hec = True
+        hec_triggers.append("Dacarbazine")
+    if "CARMUSTINE" in combined_drugs:
+        is_hec = True
+        hec_triggers.append("Carmustine")
+    if ("DOXORUBICIN" in combined_drugs or "EPIRUBICIN" in combined_drugs) and "CYCLOPHOSPHAMIDE" in combined_drugs:
+        is_hec = True
+        hec_triggers.append("Anthracycline + Cyclophosphamide (AC或EC處方)")
+
+    if "OXALIPLATIN" in combined_drugs:
+        is_mec = True
+        mec_triggers.append("Oxaliplatin")
+    if "CARBOPLATIN" in combined_drugs:
+        is_mec = True
+        mec_triggers.append("Carboplatin")
+    if "IRINOTECAN" in combined_drugs:
+        is_mec = True
+        mec_triggers.append("Irinotecan")
+    if "IFOSFAMIDE" in combined_drugs:
+        is_mec = True
+        mec_triggers.append("Ifosfamide")
+    if "DOXORUBICIN" in combined_drugs and "CYCLOPHOSPHAMIDE" not in combined_drugs:
+        is_mec = True
+        mec_triggers.append("Doxorubicin")
+    if "EPIRUBICIN" in combined_drugs and "CYCLOPHOSPHAMIDE" not in combined_drugs:
+        is_mec = True
+        mec_triggers.append("Epirubicin")
+
+    if is_hec:
+        st.error(f"🚨 **【高致吐風險 (HEC)】警示**：此處方包含 **{', '.join(hec_triggers)}**。\n\n依據指引，建議給予 **三合一或四合一強效止吐預防** (如 NK1 RA + 5-HT3 RA + Dexamethasone ± Olanzapine)。")
+    elif is_mec:
+        st.warning(f"⚠️ **【中度致吐風險 (MEC)】警示**：此處方包含 **{', '.join(mec_triggers)}**。\n\n依據指引，建議給予 **二合一或三合一止吐預防** (如 5-HT3 RA + Dexamethasone ± NK1 RA)。")
+    else:
+        st.success("✅ **【低/極低致吐風險】**：此處方無常見的高/中度致吐化療藥物，依據指引視病人症狀需要給予常規止吐藥物即可。")
+
+    st.divider()
+
     # --- ANC 計算 ---
     st.markdown("### 🩸 絕對嗜中性白血球 (ANC) 施打前評估")
     c1, c2, c3 = st.columns(3)
@@ -217,17 +175,7 @@ def render_regimen_details(final_df, display_title, df_full, prefix_key):
     needs_auc = any('auc' in str(d).lower() for d in final_df['劑量 (Dose)'])
     
     global_bsa, global_bw, dose_adj_factor = 1.60, 60.0, 1.0
-    global_egfr = 60.0
-    
-    default_auc = 5.0
-    if needs_auc:
-        for d_val in final_df['劑量 (Dose)']:
-            d_str = str(d_val).lower()
-            if 'auc' in d_str:
-                m = re.search(r'auc\s*[=:-]?\s*(\d+(?:\.\d+)?)', d_str)
-                if m:
-                    default_auc = float(m.group(1))
-                    break
+    global_auc, global_egfr = 5.0, 60.0
     
     if needs_bsa or needs_bw or needs_auc:
         col_count = sum([needs_bsa, needs_bw, needs_auc*2, True]) 
@@ -241,7 +189,7 @@ def render_regimen_details(final_df, display_title, df_full, prefix_key):
             global_bw = cols[col_idx].number_input("⚖️ 病人體重 (kg):", min_value=0.0, value=60.0, step=1.0, key=f"bw_{prefix_key}")
             col_idx += 1
         if needs_auc:
-            global_auc = cols[col_idx].number_input("🎯 目標 AUC (**:red[依照實際方案修改]**):", min_value=0.0, value=default_auc, step=0.5, key=f"auc_{prefix_key}")
+            global_auc = cols[col_idx].number_input("🎯 目標 AUC:", min_value=0.0, value=5.0, step=0.5, key=f"auc_{prefix_key}")
             col_idx += 1
             global_egfr = cols[col_idx].number_input("🩸 eGFR (請填入 Clcr):", min_value=0.0, value=60.0, step=1.0, key=f"egfr_{prefix_key}")
             col_idx += 1
@@ -281,12 +229,9 @@ def render_regimen_details(final_df, display_title, df_full, prefix_key):
             st.markdown(f"💊 **【{d_name}】**: 固定劑量 ({row['劑量 (Dose)']})")
     st.divider()
 
-    # --- 新增：NCCN 止吐藥物建議 ---
-    st.markdown("### 🤢 止吐預防建議 (依據 NCCN 指引)")
-    st.markdown(get_antiemetic_recommendation_html(final_df['藥品名'].tolist()), unsafe_allow_html=True)
-    st.divider()
-
-    # --- 注意事項 ---
+    # ==========================================
+    # ⚠️ 評估項目與調配注意事項
+    # ==========================================
     st.markdown("### ⚠️ 評估項目與調配注意事項")
     for _, row in final_df.iterrows():
         notes = []
@@ -294,51 +239,56 @@ def render_regimen_details(final_df, display_title, df_full, prefix_key):
         if '再生液配製' in df_full.columns and row['再生液配製']:
             recon_text = str(row['再生液配製'])
             if "液劑" not in recon_text and "無須配製" not in recon_text and "口服" not in recon_text and recon_text.strip() != "無":
-                recon_text = recon_text.replace("N/S", "N/S食鹽水")
-                recon_text = re.sub(r'(\d+(?:\.\d+)?\s*(?:ml|mL|cc|CC))', 
-                                r"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>\1</span>", 
-                                recon_text)
-                for sol in ["專用水", "N/S食鹽水", "注射用水"]:
-                    recon_text = recon_text.replace(sol, f"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>{sol}</span>")
                 notes.append(f"🧪 <b>【再生液配製】</b>: {recon_text}")
-                
         if '調配與給藥注意事項' in df_full.columns and row['調配與給藥注意事項']:
             notes.append(f"🏥 <b>【調配規範】</b>:<br>{row['調配與給藥注意事項']}")
         
         if notes:
             text = "<br><br>".join(notes).replace("不可冷藏", "【NO_FRIDGE】")
-            for k in ["冷藏", "避光", "不可使用過濾器", "限用D5W"]:
+            for k in ["冷藏", "避光", "不可使用過濾器", "限用NS", "限用D5W"]:
                 text = text.replace(k, f"<span style='color:#ff4b4b; font-size:1.3em; font-weight:bold;'>{k}</span>")
             text = text.replace("不可鞘內注射", "<span style='color:#ff4b4b; font-size:1.4em; font-weight:bold; background-color:#ffeb3b; padding:0 4px; border-radius:4px;'>絕對不可鞘內注射</span>")
             text = text.replace("【NO_FRIDGE】", "不可冷藏").replace("\n", "<br>")
             
             drug_icon = get_drug_icon_html(row['藥品名'], row.get('藥物途徑', ''), row.get('再生液配製', ''), row.get('注意事項 / 評估項目', ''), row.get('調配與給藥注意事項', ''))
             html_card = f"""
-            <div style="
-                background-color: rgba(128, 128, 128, 0.1); 
-                padding: 20px; 
-                border-radius: 10px; 
-                border: 1px solid rgba(128, 128, 128, 0.4); 
-                border-left: 8px solid #ff4b4b; 
-                margin-bottom: 25px; 
-                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-            ">
-                <div style="
-                    font-size: 1.3em; 
-                    font-weight: bold; 
-                    margin-bottom: 15px; 
-                    border-bottom: 2px solid rgba(128, 128, 128, 0.2); 
-                    padding-bottom: 10px;
-                    display: flex; align-items: center;
-                ">
-                    {drug_icon} <span style="margin-left:5px;">藥品：{row['藥品名']}</span>
+            <div style="background-color: var(--secondary-background-color); padding: 15px; border-radius: 8px; border: 1px solid var(--primary-color); margin-bottom: 10px;">
+                <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 12px; color: var(--primary-color); display: flex; align-items: center;">
+                    {drug_icon} 藥品：{row['藥品名']}
                 </div>
-                <div style="line-height: 1.8; font-size: 1.05em; color: var(--text-color);">
-                    {text}
-                </div>
+                <div style="line-height: 1.6; color: var(--text-color);">{text}</div>
             </div>
             """
             st.markdown(html_card, unsafe_allow_html=True)
+
+    # ==========================================
+    # 🏥 本院專屬調配提醒 (新增最底部顯示)
+    # ==========================================
+    if '本院調配提醒' in final_df.columns:
+        # 檢查該處方內是否有任何藥物帶有本院提醒
+        has_hospital_notes = any(str(n).strip() != "" for n in final_df['本院調配提醒'])
+        if has_hospital_notes:
+            st.divider()
+            st.markdown("### 📝 本院專屬配製注意事項")
+            for _, row in final_df.iterrows():
+                h_note = str(row.get('本院調配提醒', '')).strip()
+                if h_note:
+                    h_text = h_note.replace("不可冷藏", "【NO_FRIDGE】")
+                    for k in ["冷藏", "避光", "不可使用過濾器", "不可搖晃", "勿振搖", "不可震搖", "限用NS", "限用D5W"]:
+                        h_text = h_text.replace(k, f"<span style='color:#ff4b4b; font-weight:bold;'>{k}</span>")
+                    h_text = h_text.replace("【NO_FRIDGE】", "不可冷藏").replace("\n", "<br>")
+                    
+                    card_html = f"""
+                    <div style="background-color: var(--secondary-background-color); padding: 15px; border-radius: 8px; border-left: 5px solid #28a745; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                        <div style="font-size: 1.1em; font-weight: bold; color: var(--text-color); margin-bottom: 8px;">
+                            📌 {row['藥品名']}
+                        </div>
+                        <div style="color: var(--text-color); line-height: 1.6; opacity: 0.9;">
+                            {h_text}
+                        </div>
+                    </div>
+                    """
+                    st.markdown(card_html, unsafe_allow_html=True)
 
 
 try:
@@ -347,9 +297,6 @@ try:
 
     tab1, tab2, tab3 = st.tabs(["💊 依已知用藥逆向查詢", "📂 依病症分類查詢", "🔍 藥物名稱快速核對"])
 
-    # ==========================================
-    # 分頁 1：【依已知用藥逆向查詢】(置於首頁)
-    # ==========================================
     with tab1:
         st.markdown("#### 🎯 依已知用藥逆向尋找處方組套")
         col1_1, col1_2 = st.columns([4, 6])
@@ -358,7 +305,6 @@ try:
             known_drug = st.text_input("1. 輸入藥單上的已知藥物 (如: Trastuzumab)", placeholder="輸入部分英文即可", key="drug_t1_new")
             
         if known_drug:
-            # 找出所有包含此藥物的紀錄
             df_has_drug = df[df['藥品名'].str.contains(known_drug, case=False, na=False)]
             
             if df_has_drug.empty:
@@ -371,12 +317,10 @@ try:
                 st.divider()
                 st.markdown("##### 3. 選擇包含此藥物的處方組套：")
                 
-                # 篩選出該癌症下，包含此藥物的方案 (Line + Regimen)
                 df_drug_cancer = df_has_drug[df_has_drug['癌症種類'] == known_cancer].copy()
                 df_drug_cancer['Line_Regimen'] = df_drug_cancer['治療線別'] + " | " + df_drug_cancer['處方方案 / 條件']
                 matching_regimens = df_drug_cancer['Line_Regimen'].unique()
                 
-                # 去原 DataFrame 抓取完整的方案資料 (才能顯示該方案內「所有的」藥物)
                 df_cancer_all = df[df['癌症種類'] == known_cancer]
                 combo_options_t1 = []
                 combo_to_line_map_t1 = {}
@@ -384,7 +328,6 @@ try:
                 
                 for lr in matching_regimens:
                     line, reg = lr.split(" | ", 1)
-                    # 抓出這個方案的所有藥物
                     drugs = df_cancer_all[(df_cancer_all['治療線別'] == line) & (df_cancer_all['處方方案 / 條件'] == reg)]['藥品名'].tolist()
                     drugs_clean = []
                     for d in drugs:
@@ -396,7 +339,6 @@ try:
                     reg_clean = reg.replace("【純口服】", "").strip()
                     route_icon = "💊" if "【純口服】" in line or "口服" in line else "💉"
                     
-                    # 顯示格式：💉 藥A + 藥B | 線別 (處方名稱)
                     opt_str = f"{route_icon} {drug_str}   |   {line_clean} ({reg_clean})"
                     combo_options_t1.append(opt_str)
                     combo_to_line_map_t1[opt_str] = line
@@ -406,20 +348,15 @@ try:
                 
                 selected_combo_t1 = st.selectbox("👇 符合條件的組套如下，請點選確認：", combo_options_t1, key="combo_t1_new")
                 
-                # 反向過濾出最終資料
                 sel_line_t1 = combo_to_line_map_t1[selected_combo_t1]
                 sel_reg_t1 = combo_to_reg_map_t1[selected_combo_t1]
                 final_df_t1 = df_cancer_all[(df_cancer_all['治療線別'] == sel_line_t1) & (df_cancer_all['處方方案 / 條件'] == sel_reg_t1)]
                 
                 st.divider()
-                # 呼叫共用模組渲染
                 if not final_df_t1.empty:
                     display_title_t1 = selected_combo_t1.split("   |   ")[0]
                     render_regimen_details(final_df_t1, display_title_t1, df, "t1_new")
 
-    # ==========================================
-    # 分頁 2：原本的【依病症分類查詢】
-    # ==========================================
     with tab2:
         row2_col1, row2_col2 = st.columns([1.5, 8.5])
         with row2_col1:
@@ -474,9 +411,6 @@ try:
             st.selectbox("2. 選擇處方方案 (Regimen)", ["-"], disabled=True, key="reg_t2_new")
             st.selectbox("3. 確認藥物組合與治療線別", ["-"], disabled=True, key="combo_t2_new")
 
-    # ==========================================
-    # 分頁 3：快速核對
-    # ==========================================
     with tab3:
         st.markdown("### 快速核對藥物是否在指引內")
         search = st.text_input("輸入藥品英文名稱：", key="search_t3")
