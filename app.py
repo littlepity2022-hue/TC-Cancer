@@ -6,6 +6,7 @@ import re
 # 設定網頁版面為寬版
 st.set_page_config(page_title="癌症用藥指引查詢系統", layout="wide")
 
+# --- 自定義 CSS 讓下拉選單文字更易讀 ---
 st.markdown("""
     <style>
     div[data-baseweb="select"] > div {
@@ -21,6 +22,9 @@ st.markdown("""
 def load_data():
     return pd.read_excel("cancer_guidelines.xlsx").fillna("")
 
+# ==========================================
+# 🎨 動態產生藥品專屬 SVG 圖示與標籤
+# ==========================================
 def get_drug_icon_html(drug_name, route, recon_note, guide_note, prep_note):
     recon_str = str(recon_note).upper()
     combined_text = f"{route} {recon_note} {guide_note} {prep_note}"
@@ -60,6 +64,9 @@ def get_drug_icon_html(drug_name, route, recon_note, guide_note, prep_note):
         
         return f'{vial_svg}{ampoule_tag}<span style="margin-right:8px;"></span>'
 
+# ==========================================
+# 🧩 共用模組：渲染處方細節 (包含表格、計算、CINV評估、注意事項)
+# ==========================================
 def render_regimen_details(final_df, display_title, df_full, prefix_key):
     st.subheader(f"📌 {display_title} 方案細節")
     
@@ -105,52 +112,113 @@ def render_regimen_details(final_df, display_title, df_full, prefix_key):
     st.dataframe(styled_df, hide_index=True, use_container_width=True)
     st.divider()
 
-    # --- CINV 評估 ---
+    # ==========================================
+    # 🤮 國際 NCCN / 健保 化療致吐風險 (CINV) 自動評估
+    # ==========================================
     st.markdown("### 🤢 化療致吐風險 (CINV) 自動評估")
-    drug_names_upper = [str(d).upper() for d in final_df['藥品名'].tolist()]
-    combined_drugs = " ".join(drug_names_upper)
     
     is_hec = False
-    hec_triggers = []
+    hec_triggers = set()
     is_mec = False
-    mec_triggers = []
+    mec_triggers = set()
+    has_anthra = False
+    has_cyclo = False
 
-    if "CISPLATIN" in combined_drugs:
-        is_hec = True
-        hec_triggers.append("Cisplatin")
-    if "DACARBAZINE" in combined_drugs:
-        is_hec = True
-        hec_triggers.append("Dacarbazine")
-    if "CARMUSTINE" in combined_drugs:
-        is_hec = True
-        hec_triggers.append("Carmustine")
-    if ("DOXORUBICIN" in combined_drugs or "EPIRUBICIN" in combined_drugs) and "CYCLOPHOSPHAMIDE" in combined_drugs:
-        is_hec = True
-        hec_triggers.append("Anthracycline + Cyclophosphamide (AC或EC處方)")
+    # 逐一掃描藥物與劑量
+    for _, row in final_df.iterrows():
+        drug = str(row['藥品名']).upper()
+        dose = str(row['劑量 (Dose)']).upper()
+        
+        # 判斷 AC 組合
+        if any(x in drug for x in ["DOXORUBICIN", "EPIRUBICIN", "IDARUBICIN", "DAUNORUBICIN"]):
+            has_anthra = True
+        if "CYCLOPHOSPHAMIDE" in drug or "ENDOXAN" in drug:
+            has_cyclo = True
 
-    if "OXALIPLATIN" in combined_drugs:
-        is_mec = True
-        mec_triggers.append("Oxaliplatin")
-    if "CARBOPLATIN" in combined_drugs:
-        is_mec = True
-        mec_triggers.append("Carboplatin")
-    if "IRINOTECAN" in combined_drugs:
-        is_mec = True
-        mec_triggers.append("Irinotecan")
-    if "IFOSFAMIDE" in combined_drugs:
-        is_mec = True
-        mec_triggers.append("Ifosfamide")
-    if "DOXORUBICIN" in combined_drugs and "CYCLOPHOSPHAMIDE" not in combined_drugs:
-        is_mec = True
-        mec_triggers.append("Doxorubicin")
-    if "EPIRUBICIN" in combined_drugs and "CYCLOPHOSPHAMIDE" not in combined_drugs:
-        is_mec = True
-        mec_triggers.append("Epirubicin")
+        # ================= HEC 判斷 (>90%) =================
+        if "CISPLATIN" in drug:
+            is_hec = True
+            hec_triggers.add("Cisplatin")
+        elif "DACARBAZINE" in drug:
+            is_hec = True
+            hec_triggers.add("Dacarbazine")
+        elif "BUSULFAN" in drug:
+            is_hec = True
+            hec_triggers.add("Busulfan")
+        elif "SACITUZUMAB" in drug or "TRODELVY" in drug:
+            is_hec = True
+            hec_triggers.add("Sacituzumab govitecan")
+        elif "DERUXTECAN" in drug or "ENHERTU" in drug:
+            is_hec = True
+            hec_triggers.add("Fam-trastuzumab deruxtecan (Enhertu)")
+        elif "ZOLBETUXIMAB" in drug or "VYLOY" in drug:
+            is_hec = True
+            hec_triggers.add("Zolbetuximab")
+        elif "MELPHALAN" in drug:
+            is_hec = True
+            hec_triggers.add("Melphalan (視劑量)")
+            
+        # 🌟 Carboplatin 劑量判斷 (AUC >= 4 為 HEC)
+        elif "CARBOPLATIN" in drug:
+            match = re.search(r'AUC\s*([0-9\.]+)', dose)
+            if match and float(match.group(1)) >= 4:
+                is_hec = True
+                hec_triggers.add(f"Carboplatin (AUC {match.group(1)} ≥ 4)")
+            else:
+                is_mec = True
+                mec_triggers.add("Carboplatin (AUC < 4 或未標明)")
+                
+        # 劑量依賴型 HEC
+        elif "DOXORUBICIN" in drug:
+            is_hec = True
+            hec_triggers.add("Doxorubicin (若劑量 ≥60 mg/m²)")
+        elif "EPIRUBICIN" in drug:
+            is_hec = True
+            hec_triggers.add("Epirubicin (若劑量 >90 mg/m²)")
+        elif "CYCLOPHOSPHAMIDE" in drug or "ENDOXAN" in drug:
+            is_hec = True
+            hec_triggers.add("Cyclophosphamide (若劑量 >1500 mg/m²)")
+        elif "IFOSFAMIDE" in drug:
+            is_hec = True
+            hec_triggers.add("Ifosfamide (若劑量 ≥2 g/m²)")
+        elif "CARMUSTINE" in drug:
+            is_hec = True
+            hec_triggers.add("Carmustine (若劑量 >250 mg/m²)")
 
+        # ================= MEC 判斷 (30-90%) =================
+        elif "OXALIPLATIN" in drug:
+            is_mec = True
+            mec_triggers.add("Oxaliplatin")
+        elif "IRINOTECAN" in drug:
+            is_mec = True
+            mec_triggers.add("Irinotecan")
+        elif "CYTARABINE" in drug:
+            is_mec = True
+            mec_triggers.add("Cytarabine")
+        elif "MITOXANTRONE" in drug:
+            is_mec = True
+            mec_triggers.add("Mitoxantrone")
+        elif "ARSENIC" in drug or "ASADIN" in drug:
+            is_mec = True
+            mec_triggers.add("Arsenic trioxide")
+        elif "IDARUBICIN" in drug:
+            is_mec = True
+            mec_triggers.add("Idarubicin")
+
+    # AC/EC 組合判定為 HEC
+    if has_anthra and has_cyclo:
+        is_hec = True
+        hec_triggers.add("AC/EC 組合 (Anthracycline + Cyclophosphamide)")
+
+    # ================= 顯示結果與健保指引 =================
     if is_hec:
-        st.error(f"🚨 **【高致吐風險 (HEC)】警示**：此處方包含 **{', '.join(hec_triggers)}**。\n\n依據指引，建議給予 **三合一或四合一強效止吐預防** (如 NK1 RA + 5-HT3 RA + Dexamethasone ± Olanzapine)。")
+        st.error(f"🚨 **【高度致吐風險 (HEC, >90%)】警示**：此處方包含 **{', '.join(hec_triggers)}**。\n\n"
+                 f"📌 **健保與 NCCN 建議預防用藥**：\n"
+                 f"建議給予 **5-HT3 拮抗劑 + NK-1 拮抗劑 (可健保) + 類固醇 (Dexamethasone)** ± Olanzapine。")
     elif is_mec:
-        st.warning(f"⚠️ **【中度致吐風險 (MEC)】警示**：此處方包含 **{', '.join(mec_triggers)}**。\n\n依據指引，建議給予 **二合一或三合一止吐預防** (如 5-HT3 RA + Dexamethasone ± NK1 RA)。")
+        st.warning(f"⚠️ **【中度致吐風險 (MEC, 30-90%)】警示**：此處方包含 **{', '.join(mec_triggers)}**。\n\n"
+                   f"📌 **健保與 NCCN 建議預防用藥**：\n"
+                   f"建議給予 **5-HT3 拮抗劑 + 類固醇 (Dexamethasone)** ± **NK-1 拮抗劑 (⚠️健保不給付，需病人自費)**。")
     else:
         st.success("✅ **【低/極低致吐風險】**：此處方無常見的高/中度致吐化療藥物，依據指引視病人症狀需要給予常規止吐藥物即可。")
 
@@ -229,9 +297,7 @@ def render_regimen_details(final_df, display_title, df_full, prefix_key):
             st.markdown(f"💊 **【{d_name}】**: 固定劑量 ({row['劑量 (Dose)']})")
     st.divider()
 
-    # ==========================================
-    # ⚠️ 評估項目與調配注意事項
-    # ==========================================
+    # --- 注意事項 ---
     st.markdown("### ⚠️ 評估項目與調配注意事項")
     for _, row in final_df.iterrows():
         notes = []
@@ -261,11 +327,8 @@ def render_regimen_details(final_df, display_title, df_full, prefix_key):
             """
             st.markdown(html_card, unsafe_allow_html=True)
 
-    # ==========================================
-    # 🏥 本院專屬調配提醒 (新增最底部顯示)
-    # ==========================================
+    # --- 本院專屬調配提醒 ---
     if '本院調配提醒' in final_df.columns:
-        # 檢查該處方內是否有任何藥物帶有本院提醒
         has_hospital_notes = any(str(n).strip() != "" for n in final_df['本院調配提醒'])
         if has_hospital_notes:
             st.divider()
