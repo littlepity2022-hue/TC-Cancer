@@ -502,6 +502,14 @@ try:
                 st.success(f"✅ 找到 {len(res)} 筆紀錄")
                 st.dataframe(res[['癌症種類', '治療線別', '處方方案 / 條件', '藥品名', '劑量 (Dose)']], hide_index=True, use_container_width=True)
             else: st.error("找不到該藥物。")
-
+    with tab4:
+        st.markdown("### 🔗 外部系統連結")
+        st.write("點擊下方按鈕或連結即可開啟另一個網頁：")
+        
+        # 方法 A：漂亮的按鈕樣式連結
+        st.link_button("🚀 開啟 癌症用藥指引系統 (新版)", "https://tc-cancer3.streamlit.app/")
+        
+        # 方法 B：一般的文字超連結（可一併提供）
+        st.markdown("👉 [點我前往 https://tc-cancer3.streamlit.app/](https://tc-cancer3.streamlit.app/)")    
 except Exception as e:
     st.error(f"錯誤：{e}")
